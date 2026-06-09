@@ -50,18 +50,18 @@ characters = [
         "radius": 14,
         "speed": 5,
         "turn": 5,
-        "kick": 6,
+        "kick": 7,
         "accuracy": 20  # неточность в градусах (чем больше, тем хуже)
     },
     {
-        "name": "Арсений",
+        "name": "Лёша",
         "color": "red",
         "outline": "darkred",
-        "radius": 18,
-        "speed": 1,
-        "turn": 3,
-        "kick": 2,
-        "accuracy": 40
+        "radius": 14,
+        "speed": 3,
+        "turn": 5,
+        "kick": 6,
+        "accuracy": 35
     },
     {
         "name": "Климентий",
@@ -98,9 +98,9 @@ characters = [
         "color": "green",
         "outline": "darkviolet",
         "radius": 14,
-        "speed": 1,
-        "turn": 1,
-        "kick": 3,
+        "speed": 2,
+        "turn": 3,
+        "kick": 4,
         "accuracy": random.randint(15, 75)
     }
 ]

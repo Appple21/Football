@@ -1,5 +1,6 @@
 import tkinter as tk
 import math
+import random
 
 ############################
 width = 500
@@ -17,6 +18,7 @@ player_radius = 14
 player_speed = 3
 turn_senor = 4
 kick_power = 10
+kick_accuracy = 0  # неточность удара в градусах
 player_x = width / 2
 player_y = height / 2 + 100
 player_angle = 0.0
@@ -36,6 +38,10 @@ player_circle = None
 player_line = None
 ball = None
 
+# Флаги
+in_character_select = True
+game_started = False
+
 characters = [
     {
         "name": "Гаяр",
@@ -44,7 +50,8 @@ characters = [
         "radius": 14,
         "speed": 5,
         "turn": 5,
-        "kick": 6
+        "kick": 6,
+        "accuracy": 20  # неточность в градусах (чем больше, тем хуже)
     },
     {
         "name": "Арсений",
@@ -53,7 +60,8 @@ characters = [
         "radius": 18,
         "speed": 1,
         "turn": 3,
-        "kick": 2
+        "kick": 2,
+        "accuracy": 40
     },
     {
         "name": "Климентий",
@@ -62,7 +70,8 @@ characters = [
         "radius": 14,
         "speed": 3,
         "turn": 4,
-        "kick": 20
+        "kick": 20,
+        "accuracy": 50
     },
     {
         "name": "Петя",
@@ -71,7 +80,8 @@ characters = [
         "radius": 12,
         "speed": 3,
         "turn": 7,
-        "kick": 9
+        "kick": 9,
+        "accuracy": 25
     },
     {
         "name": "Максим",
@@ -80,7 +90,8 @@ characters = [
         "radius": 14,
         "speed": 3,
         "turn": 4,
-        "kick": 8
+        "kick": 8,
+        "accuracy": 25
     },
     {
         "name": "Ростислав",
@@ -89,7 +100,8 @@ characters = [
         "radius": 14,
         "speed": 1,
         "turn": 1,
-        "kick": 3
+        "kick": 3,
+        "accuracy": random.randint(15, 75)
     }
 ]
 
@@ -140,7 +152,7 @@ def create_game_objects():
 
 def reset_positions():
     global player_x, player_y, player_angle
-    global ball_x, ball_y, ball_vx, ball_vy, ball_attached, goal_checked
+    global ball_x, ball_y, ball_vx, ball_vy, ball_attached, goal_checked, game_started
 
     player_x = width / 2
     player_y = height / 2 + 100
@@ -152,30 +164,37 @@ def reset_positions():
     ball_vy = 0
     ball_attached = False
     goal_checked = False
+    game_started = False
 
 
 def start():
     #Перезапуск игры#
+    global in_character_select, game_started
+    in_character_select = False
+    game_started = False
     reset_positions()
     draw_field()
     create_game_objects()
+    game_loop()
 
 
 def select_character(char):
-    global selected_char, player_radius, player_speed, turn_senor, kick_power
+    global selected_char, player_radius, player_speed, turn_senor, kick_power, kick_accuracy
 
     selected_char = char
     player_radius = char["radius"]
     player_speed = char["speed"]
     turn_senor = char["turn"]
     kick_power = char["kick"]
+    kick_accuracy = char["accuracy"]
 
     start()
-    game_loop()
 
 
 def show_character_select():
     #Показать экран выбора персонажа#
+    global in_character_select
+    in_character_select = True
     canvas.delete("all")
     canvas.create_rectangle(0, 0, width, height, fill="darkgreen")
 
@@ -209,7 +228,7 @@ def show_character_select():
         )
 
         # Характеристики
-        stats_text = f"Скорость: {char['speed']} | Удар: {char['kick']} | Поворот: {char['turn']}"
+        stats_text = f"Скорость: {char['speed']} | Удар: {char['kick']} | Поворот: {char['turn']} | Точность: {char['accuracy']}°"
         canvas.create_text(
             width // 2, y1 + 50,
             text=stats_text,
@@ -223,6 +242,8 @@ def show_character_select():
 
 def on_click(event):
     #Обработка кликов мыши#
+    if not in_character_select:
+        return
     # Проверяем клики по кнопкам выбора персонажа
     for char in characters:
         if "button_coords" in char:
@@ -298,6 +319,11 @@ def kick_ball():
 
     ball_attached = False
     rad = math.radians(player_angle)
+    
+    # Добавляем случайное отклонение в зависимости от точности
+    deviation = random.uniform(-kick_accuracy, kick_accuracy)
+    rad += math.radians(deviation)
+    
     ball_vx = math.sin(rad) * kick_power
     ball_vy = -math.cos(rad) * kick_power
 
@@ -324,84 +350,94 @@ def on_release(event):
 
 def game_loop():
     global player_x, player_y, player_angle
-    global ball_x, ball_y, ball_vx, ball_vy, ball_attached, goal_checked
+    global ball_x, ball_y, ball_vx, ball_vy, ball_attached, goal_checked, game_started
 
-    # поворот
-    if "left" in keys_pressed or "a" in keys_pressed:
-        player_angle -= turn_senor
-    if "right" in keys_pressed or "d" in keys_pressed:
-        player_angle += turn_senor
+    if game_started:
+        return
+    game_started = True
 
-    # движение ВПЕРЁД
-    if "up" in keys_pressed or "w" in keys_pressed:
+    def loop():
+        global player_x, player_y, player_angle
+        global ball_x, ball_y, ball_vx, ball_vy, ball_attached, goal_checked
+
+        # поворот
+        if "left" in keys_pressed or "a" in keys_pressed:
+            player_angle -= turn_senor
+        if "right" in keys_pressed or "d" in keys_pressed:
+            player_angle += turn_senor
+
+        # движение ВПЕРЁД
+        if "up" in keys_pressed or "w" in keys_pressed:
+            rad = math.radians(player_angle)
+            new_x = max(margin + player_radius,
+                        min(width - margin - player_radius, player_x + math.sin(rad) * player_speed))
+            new_y = max(margin + player_radius,
+                        min(height - margin - player_radius, player_y - math.cos(rad) * player_speed))
+            player_x, player_y = new_x, new_y
+
+        # движение НАЗАД
+        if "down" in keys_pressed or "s" in keys_pressed:
+            rad = math.radians(player_angle)
+            new_x = max(margin + player_radius,
+                        min(width - margin - player_radius, player_x - math.sin(rad) * player_speed))
+            new_y = max(margin + player_radius,
+                        min(height - margin - player_radius, player_y + math.cos(rad) * player_speed))
+            player_x, player_y = new_x, new_y
+
         rad = math.radians(player_angle)
-        new_x = max(margin + player_radius,
-                    min(width - margin - player_radius, player_x + math.sin(rad) * player_speed))
-        new_y = max(margin + player_radius,
-                    min(height - margin - player_radius, player_y - math.cos(rad) * player_speed))
-        player_x, player_y = new_x, new_y
 
-    # движение НАЗАД
-    if "down" in keys_pressed or "s" in keys_pressed:
-        rad = math.radians(player_angle)
-        new_x = max(margin + player_radius,
-                    min(width - margin - player_radius, player_x - math.sin(rad) * player_speed))
-        new_y = max(margin + player_radius,
-                    min(height - margin - player_radius, player_y + math.cos(rad) * player_speed))
-        player_x, player_y = new_x, new_y
-
-    rad = math.radians(player_angle)
-
-    if ball_attached:
-        offset = player_radius + ball_radius + 4
-        ball_x = player_x + math.sin(rad) * offset
-        ball_y = player_y - math.cos(rad) * offset
-    else:
-        ball_x += ball_vx
-        ball_y += ball_vy
-
-        # трение
-        ball_vx *= 0.99
-        ball_vy *= 0.99
-
-        # столкновение со стенками поля
-        left = margin + ball_radius
-        right = width - margin - ball_radius
-
-        # границы для ворот
-        if width // 2 - 30 < ball_x < width // 2 + 30:
-            top = margin - 15 + ball_radius
+        if ball_attached:
+            offset = player_radius + ball_radius + 4
+            ball_x = player_x + math.sin(rad) * offset
+            ball_y = player_y - math.cos(rad) * offset
         else:
-            top = margin + ball_radius
+            ball_x += ball_vx
+            ball_y += ball_vy
 
-        if width // 2 - 30 < ball_x < width // 2 + 30:
-            bottom = height - margin + 15 - ball_radius
-        else:
-            bottom = height - margin - ball_radius
+            # трение
+            ball_vx *= 0.99
+            ball_vy *= 0.99
 
-        if ball_x < left:
-            ball_x = left
-            ball_vx *= -0.8
+            # столкновение со стенками поля
+            left = margin + ball_radius
+            right = width - margin - ball_radius
 
-        if ball_x > right:
-            ball_x = right
-            ball_vx *= -0.8
+            # границы для ворот
+            if width // 2 - 30 < ball_x < width // 2 + 30:
+                top = margin - 15 + ball_radius
+            else:
+                top = margin + ball_radius
 
-        if ball_y < top:
-            ball_y = top
-            ball_vy *= -0.8
+            if width // 2 - 30 < ball_x < width // 2 + 30:
+                bottom = height - margin + 15 - ball_radius
+            else:
+                bottom = height - margin - ball_radius
 
-        if ball_y > bottom:
-            ball_y = bottom
-            ball_vy *= -0.8
+            if ball_x < left:
+                ball_x = left
+                ball_vx *= -0.8
 
-    # гол ли
-    if not goal_checked and check_goal():
-        goal_checked = True
-        end_game()
+            if ball_x > right:
+                ball_x = right
+                ball_vx *= -0.8
 
-    update_visuals()
-    root.after(16, game_loop)
+            if ball_y < top:
+                ball_y = top
+                ball_vy *= -0.8
+
+            if ball_y > bottom:
+                ball_y = bottom
+                ball_vy *= -0.8
+
+        # гол ли
+        if not goal_checked and check_goal():
+            goal_checked = True
+            end_game()
+
+        update_visuals()
+        root.after(16, loop)
+
+    loop()
 
 
 # Привязка событий

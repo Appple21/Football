@@ -48,8 +48,8 @@ characters = [
         "color": "black",
         "outline": "darkred",
         "radius": 14,
-        "speed": 5,
-        "turn": 5,
+        "speed": 4.25,
+        "turn": 4.25,
         "kick": 7,
         "accuracy": 20  # неточность в градусах (чем больше, тем хуже)
     },
@@ -58,9 +58,9 @@ characters = [
         "color": "red",
         "outline": "darkred",
         "radius": 14,
-        "speed": 3,
+        "speed": 3.75,
         "turn": 5,
-        "kick": 6,
+        "kick": 7,
         "accuracy": 35
     },
     {
@@ -78,7 +78,7 @@ characters = [
         "color": "orange",
         "outline": "darkorange",
         "radius": 12,
-        "speed": 3,
+        "speed": 4,
         "turn": 7,
         "kick": 9,
         "accuracy": 25
@@ -88,7 +88,7 @@ characters = [
         "color": "purple",
         "outline": "darkviolet",
         "radius": 14,
-        "speed": 3,
+        "speed": 3.25,
         "turn": 4,
         "kick": 8,
         "accuracy": 25
@@ -348,9 +348,34 @@ def on_release(event):
     keys_pressed.discard(event.keysym.lower())
 
 
+# Добавь глобальную переменную для хранения ID after
+loop_after_id = None
+
+def reset_positions():
+    global player_x, player_y, player_angle
+    global ball_x, ball_y, ball_vx, ball_vy, ball_attached, goal_checked, game_started, loop_after_id
+
+    # Отменяем старый цикл
+    if loop_after_id is not None:
+        root.after_cancel(loop_after_id)
+        loop_after_id = None
+
+    player_x = width / 2
+    player_y = height / 2 + 100
+    player_angle = 0.0
+
+    ball_x = width / 2
+    ball_y = height / 2
+    ball_vx = 0
+    ball_vy = 0
+    ball_attached = False
+    goal_checked = False
+    game_started = False
+
+
 def game_loop():
     global player_x, player_y, player_angle
-    global ball_x, ball_y, ball_vx, ball_vy, ball_attached, goal_checked, game_started
+    global ball_x, ball_y, ball_vx, ball_vy, ball_attached, goal_checked, game_started, loop_after_id
 
     if game_started:
         return
@@ -358,7 +383,7 @@ def game_loop():
 
     def loop():
         global player_x, player_y, player_angle
-        global ball_x, ball_y, ball_vx, ball_vy, ball_attached, goal_checked
+        global ball_x, ball_y, ball_vx, ball_vy, ball_attached, goal_checked, loop_after_id
 
         # поворот
         if "left" in keys_pressed or "a" in keys_pressed:
@@ -435,7 +460,7 @@ def game_loop():
             end_game()
 
         update_visuals()
-        root.after(16, loop)
+        loop_after_id = root.after(16, loop)
 
     loop()
 

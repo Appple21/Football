@@ -59,7 +59,7 @@ characters = [
         "outline": "darkred",
         "radius": 14,
         "speed": 3.75,
-        "turn": 5,
+        "turn": 4,
         "kick": 7,
         "accuracy": 35
     },

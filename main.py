@@ -7,6 +7,10 @@ width = 500
 height = 735
 margin = 50
 
+GOAL_HALF_WIDTH = 60
+PENALTY_HALF_WIDTH = 180
+SMALL_BOX_HALF_WIDTH = 90
+
 root = tk.Tk()
 root.title("Вертикальное футбольное поле")
 canvas = tk.Canvas(root, width=width, height=height, bg="green")
@@ -41,7 +45,7 @@ bot_steal_delay = 0
 bot_keeper_x = width / 2
 bot_keeper_y = margin + 10
 bot_keeper_radius = 10
-bot_keeper_speed = 2.5        # Увеличена скорость
+bot_keeper_speed = 2.5        # Быстрый вратарь
 bot_keeper_direction = 1
 bot_keeper_ball_attached = False
 bot_keeper_kick_cooldown = 0
@@ -73,8 +77,8 @@ random_char = None
 puddles = []
 
 characters = [
-    {"name": "Гаяр",     "color": "black",  "outline": "darkred",    "radius": 14, "speed": 4.25, "turn": 4.25, "kick": 7,  "accuracy": 10},
-    {"name": "Лёша",     "color": "red",    "outline": "darkred",    "radius": 14, "speed": 3.75, "turn": 4,    "kick": 6,  "accuracy": 17.5},
+    {"name": "Гаяр",     "color": "black",  "outline": "darkred",    "radius": 14, "speed": 4.25, "turn": 4.25, "kick": 8,  "accuracy": 10},
+    {"name": "Лёша",     "color": "red",    "outline": "darkred",    "radius": 14, "speed": 3.75, "turn": 4,    "kick": 7,  "accuracy": 17.5},
     {"name": "Климентий","color": "blue",   "outline": "darkblue",   "radius": 14, "speed": 3,    "turn": 4,    "kick": 20, "accuracy": 25},
     {"name": "Петя",     "color": "orange", "outline": "darkorange", "radius": 12, "speed": 4,    "turn": 6,    "kick": 9,  "accuracy": 12.5},
     {"name": "Максим",   "color": "purple", "outline": "darkviolet", "radius": 14, "speed": 3.25, "turn": 4,    "kick": 8,  "accuracy": 12.5},
@@ -183,13 +187,13 @@ def draw_field():
     canvas.create_line(margin, height // 2, width - margin, height // 2, fill="white", width=3)
     canvas.create_oval(width//2-60, height//2-60, width//2+60, height//2+60, outline="white", width=3)
     canvas.create_oval(width//2-4, height//2-4, width//2+4, height//2+4, fill="white", outline="white")
-    canvas.create_rectangle(width//2-90, margin, width//2+90, margin+120, outline="white", width=3)
-    canvas.create_rectangle(width//2-90, height-margin-120, width//2+90, height-margin, outline="white", width=3)
-    canvas.create_rectangle(width//2-45, margin, width//2+45, margin+50, outline="white", width=3)
-    canvas.create_rectangle(width//2-45, height-margin-50, width//2+45, height-margin, outline="white", width=3)
-    canvas.create_rectangle(width//2-30, margin-15, width//2+30, margin, outline="blue", width=3, fill="darkblue")
+    canvas.create_rectangle(width//2-PENALTY_HALF_WIDTH, margin, width//2+PENALTY_HALF_WIDTH, margin+120, outline="white", width=3)
+    canvas.create_rectangle(width//2-PENALTY_HALF_WIDTH, height-margin-120, width//2+PENALTY_HALF_WIDTH, height-margin, outline="white", width=3)
+    canvas.create_rectangle(width//2-SMALL_BOX_HALF_WIDTH, margin, width//2+SMALL_BOX_HALF_WIDTH, margin+50, outline="white", width=3)
+    canvas.create_rectangle(width//2-SMALL_BOX_HALF_WIDTH, height-margin-50, width//2+SMALL_BOX_HALF_WIDTH, height-margin, outline="white", width=3)
+    canvas.create_rectangle(width//2-GOAL_HALF_WIDTH, margin-15, width//2+GOAL_HALF_WIDTH, margin, outline="blue", width=3, fill="darkblue")
     canvas.create_text(width//2, margin-40, text=f"{bot_char['name']} (БОТ)", font=("Arial", 14, "bold"), fill="lightblue")
-    canvas.create_rectangle(width//2-30, height-margin, width//2+30, height-margin+15, outline="red", width=3, fill="darkred")
+    canvas.create_rectangle(width//2-GOAL_HALF_WIDTH, height-margin, width//2+GOAL_HALF_WIDTH, height-margin+15, outline="red", width=3, fill="darkred")
     canvas.create_text(width//2, height-margin+40, text=f"{selected_char['name']} (ИГРОК)", font=("Arial", 14, "bold"), fill="pink")
     draw_puddles()
     draw_pillars()
@@ -373,9 +377,9 @@ def end_game(scorer):
 
 
 def check_goal():
-    if width//2-30 < ball_x < width//2+30 and margin-15 < ball_y < margin:
+    if width//2-GOAL_HALF_WIDTH < ball_x < width//2+GOAL_HALF_WIDTH and margin-15 < ball_y < margin:
         return "player"
-    if width//2-30 < ball_x < width//2+30 and height-margin < ball_y < height-margin+15:
+    if width//2-GOAL_HALF_WIDTH < ball_x < width//2+GOAL_HALF_WIDTH and height-margin < ball_y < height-margin+15:
         return "bot"
     return None
 
@@ -530,25 +534,19 @@ def update_bot_keeper():
         bot_keeper_kick_cooldown -= 1
 
     # Зона движения вратаря
-    keeper_left  = width//2 - 45 + bot_keeper_radius
-    keeper_right = width//2 + 45 - bot_keeper_radius
+    keeper_left  = width//2 - GOAL_HALF_WIDTH + bot_keeper_radius
+    keeper_right = width//2 + GOAL_HALF_WIDTH - bot_keeper_radius
 
-    # Мяч летит в верхние ворота (в сторону вратаря)?
-    ball_coming_to_goal = ball_vy < 0 and ball_y < height//2
+    # Постоянное движение от штанги до штанги.
+    # За мячом не следует.
+    bot_keeper_x += bot_keeper_speed * bot_keeper_direction
 
-    if ball_coming_to_goal and not bot_keeper_ball_attached:
-        # Вратарь бежит к мячу по оси X
-        diff = ball_x - bot_keeper_x
-        move = min(abs(diff), bot_keeper_speed) * (1 if diff > 0 else -1)
-        bot_keeper_x = max(keeper_left, min(keeper_right, bot_keeper_x + move))
-    else:
-        # Патрулирование
-        bot_keeper_x += bot_keeper_speed * 0.5 * bot_keeper_direction
-        if bot_keeper_x > keeper_right:
-            bot_keeper_direction = -1
-        elif bot_keeper_x < keeper_left:
-            bot_keeper_direction = 1
-        bot_keeper_x = max(keeper_left, min(keeper_right, bot_keeper_x))
+    if bot_keeper_x >= keeper_right:
+        bot_keeper_x = keeper_right
+        bot_keeper_direction = -1
+    elif bot_keeper_x <= keeper_left:
+        bot_keeper_x = keeper_left
+        bot_keeper_direction = 1
 
     # Вратарь берёт мяч если тот рядом (физически, не просто в зоне ворот)
     dist_to_ball = math.hypot(ball_x - bot_keeper_x, ball_y - bot_keeper_y)
@@ -672,8 +670,8 @@ def game_loop():
 
             left   = margin + ball_radius
             right  = width - margin - ball_radius
-            top    = (margin - 15 + ball_radius) if (width//2-30 < ball_x < width//2+30) else (margin + ball_radius)
-            bottom = (height - margin + 15 - ball_radius) if (width//2-30 < ball_x < width//2+30) else (height - margin - ball_radius)
+            top    = (margin - 15 + ball_radius) if (width//2-GOAL_HALF_WIDTH < ball_x < width//2+GOAL_HALF_WIDTH) else (margin + ball_radius)
+            bottom = (height - margin + 15 - ball_radius) if (width//2-GOAL_HALF_WIDTH < ball_x < width//2+GOAL_HALF_WIDTH) else (height - margin - ball_radius)
 
             if ball_x < left:   ball_x = left;   ball_vx *= -0.8
             if ball_x > right:  ball_x = right;  ball_vx *= -0.8

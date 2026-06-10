@@ -30,7 +30,7 @@ keys_pressed = set()
 my_keeper_x = width / 2
 my_keeper_y = height - margin - 10
 my_keeper_radius = 10
-my_keeper_speed = 4.0
+my_keeper_speed = 2.5          # уменьшено с 4.0 до 2.5
 my_keeper_ball_attached = False
 my_keeper_kick_cooldown = 0
 MY_KEEPER_ANGLE = 0.0
@@ -152,7 +152,6 @@ CROWD_COLORS = [
 ]
 SKIN_TONES = ["#f5cba7","#f0b27a","#d4a76a","#c68642","#8d5524","#fdbcb4"]
 
-# Зафиксированные данные толпы — генерируются один раз при старте
 _crowd_top = []
 _crowd_bot_stands = []
 
@@ -163,7 +162,6 @@ def generate_crowd():
     person_r = 5
     cols = int(width / (person_r * 3))
 
-    # --- Верхняя трибуна ---
     stand_bottom = margin - 15
     rows_top = 3
     row_h = max(1, stand_bottom // rows_top)
@@ -176,10 +174,9 @@ def generate_crowd():
                 "cx": cx, "cy": cy,
                 "color": random.choice(CROWD_COLORS),
                 "skin":  random.choice(SKIN_TONES),
-                "arms":  random.random() < 0.25,   # руки вверх?
+                "arms":  random.random() < 0.25,
             })
 
-    # --- Нижняя трибуна ---
     stand_top2 = height - margin + 15
     rows_bot = 3
     row_h2 = max(1, (height - stand_top2) // rows_bot)
@@ -203,30 +200,23 @@ def draw_stands(cv):
     rows_top = 3
     row_h = max(1, stand_bottom // rows_top)
 
-    # ── Верхняя трибуна ──────────────────────────────────────────────────────
-    # Ступенчатый фон (ряды темнее снизу‑вверх)
     tier_colors_top = ["#1e1e1e", "#252525", "#2c2c2c"]
-    seat_colors_top = ["#1a3a6a", "#163060", "#122855"]   # синие сиденья
+    seat_colors_top = ["#1a3a6a", "#163060", "#122855"]
     for i in range(rows_top):
         y0 = i * row_h
         y1 = y0 + row_h
         cv.create_rectangle(0, y0, width, y1, fill=tier_colors_top[i], outline="")
-        # Полоска‑«сиденья» снизу каждого ряда
         cv.create_rectangle(0, y1 - 3, width, y1, fill=seat_colors_top[i], outline="")
 
-    # Болельщики верхней трибуны
     for p in _crowd_top:
         cx, cy = p["cx"], p["cy"]
-        # туловище/одежда
         cv.create_oval(cx - person_r, cy - person_r + 2,
                        cx + person_r, cy + person_r,
                        fill=p["color"], outline="", tags="crowd")
-        # голова
         hr = person_r * 0.6
         cv.create_oval(cx - hr, cy - person_r - hr * 1.5,
                        cx + hr, cy - person_r + hr * 0.4,
                        fill=p["skin"], outline="", tags="crowd")
-        # руки вверх
         if p["arms"]:
             arm_len = person_r * 1.3
             cv.create_line(cx - person_r * 0.7, cy - person_r * 0.3,
@@ -236,24 +226,21 @@ def draw_stands(cv):
                            cx + person_r * 1.4, cy - person_r - arm_len * 0.8,
                            fill=p["skin"], width=2, tags="crowd")
 
-    # Нижняя рамка‑барьер верхней трибуны
     cv.create_rectangle(0, stand_bottom - 4, width, stand_bottom,
                         fill="#555555", outline="")
 
-    # ── Нижняя трибуна ───────────────────────────────────────────────────────
     stand_top2 = height - margin + 15
     rows_bot = 3
     row_h2 = max(1, (height - stand_top2) // rows_bot)
 
     tier_colors_bot = ["#1e1e1e", "#252525", "#2c2c2c"]
-    seat_colors_bot = ["#6a1a1a", "#601616", "#551212"]   # красные сиденья
+    seat_colors_bot = ["#6a1a1a", "#601616", "#551212"]
     for i in range(rows_bot):
         y0 = stand_top2 + i * row_h2
         y1 = y0 + row_h2
         cv.create_rectangle(0, y0, width, y1, fill=tier_colors_bot[i], outline="")
         cv.create_rectangle(0, y1 - 3, width, y1, fill=seat_colors_bot[i], outline="")
 
-    # Болельщики нижней трибуны
     for p in _crowd_bot_stands:
         cx, cy = p["cx"], p["cy"]
         cv.create_oval(cx - person_r, cy - person_r + 2,
@@ -272,7 +259,6 @@ def draw_stands(cv):
                            cx + person_r * 1.4, cy - person_r - arm_len * 0.8,
                            fill=p["skin"], width=2, tags="crowd")
 
-    # Верхний барьер нижней трибуны
     cv.create_rectangle(0, stand_top2, width, stand_top2 + 4,
                         fill="#555555", outline="")
 
@@ -280,7 +266,6 @@ def draw_stands(cv):
 # ─── ИГРОКИ (детальные) ─────────────────────────────────────────────────────
 
 def _player_color_light(color):
-    """Возвращает более светлый вариант цвета для рубашки."""
     m = {
         "black":  "#444444",
         "red":    "#ff6666",
@@ -295,31 +280,22 @@ def _player_color_light(color):
 
 
 def create_player_objs(cv, x, y, r, body_color, outline_color, shirt_color=None, direction_color="white"):
-    """
-    Создаёт детального игрока из нескольких объектов canvas.
-    Возвращает dict с ключами: shadow, body, shirt, head, dot
-    """
     sc = shirt_color or _player_color_light(body_color)
     objs = {}
-    # тень
     objs["shadow"] = cv.create_oval(
         x-r+2, y-r//2+r, x+r+2, y+r//2+r,
         fill="#003300", outline="", stipple="gray50")
-    # тело (основной круг)
     objs["body"] = cv.create_oval(
         x-r, y-r, x+r, y+r,
         fill=body_color, outline=outline_color, width=2)
-    # рубашка (поперечная полоса)
     objs["shirt"] = cv.create_arc(
         x-r+2, y-r+2, x+r-2, y+r-2,
         start=200, extent=140,
         fill=sc, outline="", style=tk.CHORD)
-    # голова (маленький круг сверху-в-центре)
     hr = max(4, r // 3)
     objs["head"] = cv.create_oval(
         x-hr, y-hr, x+hr, y+hr,
         fill="#f5cba7", outline="#c8956c", width=1)
-    # точка направления
     objs["dot"] = cv.create_oval(
         x-2, y-r+1, x+2, y-r+5,
         fill=direction_color, outline="")
@@ -330,19 +306,13 @@ def move_player_objs(cv, objs, x, y, r, angle_deg):
     rad = math.radians(angle_deg)
     dx_tip = math.sin(rad) * r
     dy_tip = -math.cos(rad) * r
-    # тень
     cv.coords(objs["shadow"], x-r+2, y+r//2, x+r+2, y+r)
-    # тело
     cv.coords(objs["body"],   x-r, y-r, x+r, y+r)
-    # рубашка (arc не двигается через coords легко — пересоздаём позицию через itemconfig+coords)
     cv.coords(objs["shirt"],  x-r+2, y-r+2, x+r-2, y+r-2)
-    # голова
     hr = max(4, r // 3)
-    # сдвигаем голову чуть вперёд по направлению
     hx = x + math.sin(rad) * (r * 0.25)
     hy = y - math.cos(rad) * (r * 0.25)
     cv.coords(objs["head"],   hx-hr, hy-hr, hx+hr, hy+hr)
-    # точка направления
     tip_x = x + dx_tip * 0.75
     tip_y = y + dy_tip * 0.75
     cv.coords(objs["dot"], tip_x-3, tip_y-3, tip_x+3, tip_y+3)
@@ -351,36 +321,21 @@ def move_player_objs(cv, objs, x, y, r, angle_deg):
 # ─── МЯЧ (детальный) ────────────────────────────────────────────────────────
 
 def create_ball_objs(cv, x, y, r):
-    """
-    Детальный мяч:
-      тень → белая база → серый градиент-объём → 6 чёрных пятен с обводкой
-      → яркий блик + маленький вторичный блик
-    """
     objs = {}
-
-    # Тень под мячом
     objs["shadow"] = cv.create_oval(
         x - r + 4, y + r - 3, x + r + 4, y + r + 5,
         fill="#002200", outline="", stipple="gray50")
-
-    # Белая база
     objs["base"] = cv.create_oval(
         x - r, y - r, x + r, y + r,
         fill="white", outline="#111111", width=2)
-
-    # Серый объёмный слой (правый-нижний полукруг — «тень» на мяче)
     objs["shade"] = cv.create_arc(
-    x - r + 1, y - r + 1, x + r - 1, y + r - 1,
-    start=270, extent=180,
-    fill="white", outline="", style=tk.CHORD)
-
-    # Центральное пятно
+        x - r + 1, y - r + 1, x + r - 1, y + r - 1,
+        start=270, extent=180,
+        fill="white", outline="", style=tk.CHORD)
     ps0 = r * 0.52
     objs["p0"] = cv.create_polygon(
         _hex_pts(x, y, ps0, 5, offset_angle=-90),
         fill="#111111", outline="#444444", width=1, smooth=False)
-
-    # 5 боковых пятен по кругу
     for i in range(5):
         ang = math.radians(i * 72 - 90)
         px = x + math.cos(ang) * r * 0.65
@@ -389,25 +344,19 @@ def create_ball_objs(cv, x, y, r):
         objs[f"p{i+1}"] = cv.create_polygon(
             _hex_pts(px, py, ps, 5, offset_angle=i * 72),
             fill="#111111", outline="#444444", width=1, smooth=False)
-
-    # Основной блик (белый эллипс со stipple)
     sr = r * 0.32
     sx, sy = x - r * 0.28, y - r * 0.28
     objs["shine"] = cv.create_oval(
         sx - sr, sy - sr * 0.65, sx + sr, sy + sr * 0.65,
         fill="white", outline="", stipple="gray75")
-
-    # Маленький вторичный блик (чистый белый)
     sr2 = r * 0.13
     objs["shine2"] = cv.create_oval(
         sx - sr2, sy - sr2, sx + sr2, sy + sr2,
         fill="white", outline="")
-
     return objs
 
 
 def _hex_pts(cx, cy, r, n, offset_angle=0):
-    """Возвращает плоский список координат правильного n-угольника."""
     pts = []
     for i in range(n):
         a = math.radians(offset_angle + i * 360 / n)
@@ -420,7 +369,6 @@ def move_ball_objs(cv, objs, x, y, r):
     cv.coords(objs["shadow"], x - r + 4, y + r - 3, x + r + 4, y + r + 5)
     cv.coords(objs["base"],   x - r, y - r, x + r, y + r)
     cv.coords(objs["shade"],  x - r + 1, y - r + 1, x + r - 1, y + r - 1)
-
     ps0 = r * 0.52
     cv.coords(objs["p0"], _hex_pts(x, y, ps0, 5, offset_angle=-90))
     for i in range(5):
@@ -429,7 +377,6 @@ def move_ball_objs(cv, objs, x, y, r):
         py = y + math.sin(ang) * r * 0.65
         ps = r * 0.30
         cv.coords(objs[f"p{i+1}"], _hex_pts(px, py, ps, 5, offset_angle=i * 72))
-
     sr = r * 0.32
     sx, sy = x - r * 0.28, y - r * 0.28
     cv.coords(objs["shine"],  sx - sr, sy - sr * 0.65, sx + sr, sy + sr * 0.65)
@@ -535,9 +482,9 @@ def draw_field():
     # Ворота
     canvas.create_rectangle(width//2-GOAL_HALF_WIDTH,margin-15,width//2+GOAL_HALF_WIDTH,margin, outline="blue", width=3, fill="darkblue")
     canvas.create_rectangle(width//2-GOAL_HALF_WIDTH,height-margin,width//2+GOAL_HALF_WIDTH,height-margin+15, outline="red", width=3, fill="darkred")
-    # Имена
+    # Имя бота сверху оставлено, имя игрока снизу убрано
     canvas.create_text(width//2, margin-38, text=f"{bot_char['name']} (БОТ)", font=("Arial", 12, "bold"), fill="lightblue")
-    canvas.create_text(width//2, height-margin+38, text=f"{selected_char['name']} (ИГРОК)", font=("Arial", 12, "bold"), fill="pink")
+    # canvas.create_text(width//2, height-margin+38, text=f"{selected_char['name']} (ИГРОК)", font=("Arial", 12, "bold"), fill="pink")
     draw_puddles()
     draw_pillars()
     draw_score()
@@ -546,35 +493,27 @@ def draw_field():
 def draw_score():
     """Рисует табло счёта сверху окна, над полем."""
     global score_text_bot, score_text_player
-    # Координаты панели — в зоне верхней трибуны, чуть ниже середины
     bx = width // 2
-    by = (margin - 15) // 2          # вертикальный центр зоны трибуны
+    by = (margin - 15) // 2
 
-    # Внешняя тёмная рамка‑табло
     pw, ph = 130, 30
     canvas.create_rectangle(bx - pw//2 - 2, by - ph//2 - 2,
                              bx + pw//2 + 2, by + ph//2 + 2,
                              fill="#111111", outline="#888888", width=1)
-    # Основная панель
     canvas.create_rectangle(bx - pw//2, by - ph//2,
                              bx + pw//2, by + ph//2,
                              fill="#1a1a2e", outline="#4444aa", width=2)
-
-    # Подсветка‑полоска сверху
     canvas.create_rectangle(bx - pw//2 + 2, by - ph//2 + 2,
                              bx + pw//2 - 2, by - ph//2 + 5,
                              fill="#3333bb", outline="")
 
-    # Названия команд (маленькие)
     canvas.create_text(bx - 38, by - 7,
         text="БОТ", font=("Arial", 6, "bold"), fill="#7799ff")
     canvas.create_text(bx + 38, by - 7,
         text="ВЫ", font=("Arial", 6, "bold"), fill="#ff8899")
 
-    # Разделитель ":"
     canvas.create_text(bx, by + 4, text=":", font=("Arial", 18, "bold"), fill="#ffffff")
 
-    # Цифры счёта
     score_text_bot = canvas.create_text(bx - 22, by + 4,
         text=str(score_bot), font=("Arial", 18, "bold"), fill="#88aaff")
     score_text_player = canvas.create_text(bx + 22, by + 4,
@@ -658,10 +597,11 @@ def start():
     in_character_select = False; showing_random_char = False; game_started = False
     bot_char = select_random_bot()
     bot_radius = bot_char["radius"]
-    bot_speed  = bot_char["speed"] * 0.55
-    bot_turn   = bot_char["turn"]  * 0.55
-    bot_kick_power    = bot_char["kick"]     * 0.65
-    bot_kick_accuracy = bot_char["accuracy"] * 1.8
+    # Усиленный бот – теперь удар ещё сильнее (1.2 вместо 1.0)
+    bot_speed  = bot_char["speed"] * 0.75
+    bot_turn   = bot_char["turn"]  * 0.75
+    bot_kick_power    = bot_char["kick"]     * 1.2   # сильнее бьёт (было 1.0)
+    bot_kick_accuracy = bot_char["accuracy"] * 1.2
     generate_pillars(); generate_puddles(); generate_crowd()
     reset_positions()
     draw_field()
@@ -862,80 +802,116 @@ def update_my_keeper():
 
 
 def update_bot():
+    """Сильный бот с усиленным ударом (1.2x), обходит столбы через check_pillar_collision."""
     global bot_x,bot_y,bot_angle,bot_ball_attached,bot_kick_cooldown,bot_delay,bot_wander_timer,bot_steal_delay
     global ball_attached,ball_vx,ball_vy,last_touch,ball_x,ball_y
+
     if bot_delay>0: bot_delay-=1; return
     if bot_kick_cooldown>0: bot_kick_cooldown-=1
     if bot_steal_delay>0:   bot_steal_delay-=1
-    bot_wander_timer-=1
-    if bot_wander_timer<=0:
-        bot_wander_timer=random.randint(30,70)
-        if random.random()<0.25: bot_angle+=random.uniform(-45,45)
-    tx,ty = (ball_x,ball_y) if not bot_ball_attached else (width/2+random.uniform(-30,30),height-margin+15)
-    dx,dy = tx-bot_x, ty-bot_y
-    ta = math.degrees(math.atan2(dx,-dy))
-    diff = ta-bot_angle
-    while diff>180: diff-=360
-    while diff<-180: diff+=360
-    bot_angle += (bot_turn if diff>0 else -bot_turn) if abs(diff)>bot_turn else diff
+
+    bot_wander_timer -= 1
+    if bot_wander_timer <= 0:
+        bot_wander_timer = random.randint(20, 50)
+        if random.random() < 0.15:
+            bot_angle += random.uniform(-25, 25)
+
+    target_x = ball_x
+    target_y = ball_y
+    if bot_ball_attached:
+        target_x = width/2 + random.uniform(-15, 15)
+        target_y = height - margin + 15
+
+    dx, dy = target_x - bot_x, target_y - bot_y
+    target_angle = math.degrees(math.atan2(dx, -dy))
+    angle_diff = target_angle - bot_angle
+    while angle_diff > 180:  angle_diff -= 360
+    while angle_diff < -180: angle_diff += 360
+
+    if abs(angle_diff) > bot_turn:
+        bot_angle += bot_turn if angle_diff > 0 else -bot_turn
+    else:
+        bot_angle = target_angle
+
     rad = math.radians(bot_angle)
-    dist = math.hypot(dx,dy)
-    if bot_ball_attached and dist<random.randint(50,200) and bot_kick_cooldown==0:
-        gx=width//2+random.uniform(-30,30); gy=height-margin+random.uniform(-5,10)
-        ga=math.atan2(gx-bot_x,-(gy-bot_y))
-        kr=ga+math.radians(random.uniform(-bot_kick_accuracy,bot_kick_accuracy))
-        ball_vx=math.sin(kr)*bot_kick_power; ball_vy=-math.cos(kr)*bot_kick_power
-        bot_ball_attached=False; ball_attached=False; last_touch="bot"; bot_kick_cooldown=70; return
-    if not bot_ball_attached and ball_attached and last_touch=="player":
-        if math.hypot(player_x-bot_x,player_y-bot_y)<35:
-            if bot_steal_delay==0: bot_steal_delay=40
-            elif bot_steal_delay==1 and random.random()<0.2:
-                bot_ball_attached=True; ball_attached=True; last_touch="bot"; bot_steal_delay=0
+    distance_to_target = math.hypot(dx, dy)
+
+    kick_distance = random.randint(80, 280)
+    if bot_ball_attached and distance_to_target < kick_distance and bot_kick_cooldown == 0:
+        target_goal_x = width//2 + random.uniform(-20, 20)
+        target_goal_y = height - margin + random.uniform(-5, 10)
+        goal_dx = target_goal_x - bot_x
+        goal_dy = target_goal_y - bot_y
+        goal_angle = math.atan2(goal_dx, -goal_dy)
+        deviation = random.uniform(-bot_kick_accuracy, bot_kick_accuracy)
+        kick_rad = goal_angle + math.radians(deviation)
+        ball_vx = math.sin(kick_rad) * bot_kick_power
+        ball_vy = -math.cos(kick_rad) * bot_kick_power
+        bot_ball_attached = False
+        ball_attached = False
+        last_touch = "bot"
+        bot_kick_cooldown = 45
+        return
+
+    if not bot_ball_attached and ball_attached and last_touch == "player":
+        dist_to_player = math.hypot(player_x - bot_x, player_y - bot_y)
+        if dist_to_player < 35:
+            if bot_steal_delay == 0:
+                bot_steal_delay = 20
+            elif bot_steal_delay == 1 and random.random() < 0.4:
+                bot_ball_attached = True
+                ball_attached = True
+                last_touch = "bot"
+                bot_steal_delay = 0
+
     if not bot_ball_attached and not ball_attached:
-        if math.hypot(ball_x-bot_x,ball_y-bot_y)<30 and random.random()<0.7:
-            bot_ball_attached=True; ball_attached=True; last_touch="bot"
-    move = (random.random()<0.8 if bot_ball_attached and dist>10 else
-            random.random()<0.65 if not bot_ball_attached and dist>30 else False)
-    if move:
-        sp = bot_speed*(0.5 if is_in_puddle(bot_x,bot_y,bot_radius) else 1.0)
+        dist_to_ball = math.hypot(ball_x - bot_x, ball_y - bot_y)
+        if dist_to_ball < 30 and random.random() < 0.85:
+            bot_ball_attached = True
+            ball_attached = True
+            last_touch = "bot"
 
-        nx = max(
-            margin + bot_radius,
-            min(width - margin - bot_radius,
-                bot_x + math.sin(rad) * sp)
-        )
+    should_move = False
+    if bot_ball_attached and distance_to_target > 10:
+        should_move = random.random() < 0.95
+    elif not bot_ball_attached and distance_to_target > 30:
+        should_move = random.random() < 0.85
 
-        ny = max(
-            margin + bot_radius,
-            min(height - margin - bot_radius,
-                bot_y - math.cos(rad) * sp)
-        )
-
-        nx, ny, _, _, _ = check_pillar_collision(nx, ny, bot_radius)
-
-        bot_x = nx
-        bot_y = ny
+    if should_move:
+        current_speed = bot_speed * (0.5 if is_in_puddle(bot_x, bot_y, bot_radius) else 1.0)
+        new_x = max(margin+bot_radius, min(width-margin-bot_radius, bot_x + math.sin(rad)*current_speed))
+        new_y = max(margin+bot_radius, min(height-margin-bot_radius, bot_y - math.cos(rad)*current_speed))
+        # коллизия со столбами (только выталкивание)
+        new_x, new_y, _, _, _ = check_pillar_collision(new_x, new_y, bot_radius)
+        bot_x, bot_y = new_x, new_y
 
 
 def update_bot_keeper():
     global bot_keeper_x,bot_keeper_direction,bot_keeper_jump_cooldown
     global bot_keeper_ball_attached,bot_keeper_kick_cooldown
     global ball_attached,ball_vx,ball_vy,last_touch,ball_x,ball_y
+
     if bot_keeper_kick_cooldown>0: bot_keeper_kick_cooldown-=1
     if bot_keeper_jump_cooldown>0: bot_keeper_jump_cooldown-=1
+
     kl=width//2-GOAL_HALF_WIDTH+bot_keeper_radius
     kr=width//2+GOAL_HALF_WIDTH-bot_keeper_radius
+
     bot_keeper_x+=bot_keeper_speed*bot_keeper_direction
     if bot_keeper_x>=kr: bot_keeper_x=kr; bot_keeper_direction=-1
     elif bot_keeper_x<=kl: bot_keeper_x=kl; bot_keeper_direction=1
+
+    # Прыгает чаще: интервал 30-50
     if bot_keeper_jump_cooldown==0:
         jmp=18
-        bot_keeper_x=max(kl,bot_keeper_x-jmp) if ball_x<bot_keeper_x else min(kr,bot_keeper_x+jmp)
-        bot_keeper_jump_cooldown=random.randint(50,80)
+        bot_keeper_x = max(kl, bot_keeper_x-jmp) if ball_x < bot_keeper_x else min(kr, bot_keeper_x+jmp)
+        bot_keeper_jump_cooldown = random.randint(30, 50)
+
     dist=math.hypot(ball_x-bot_keeper_x,ball_y-bot_keeper_y)
     if not bot_keeper_ball_attached and dist<bot_keeper_radius+ball_radius+10:
         ball_attached=False; bot_ball_attached=False
         bot_keeper_ball_attached=True; ball_attached=True; last_touch="bot_keeper"
+
     if bot_keeper_ball_attached and bot_keeper_kick_cooldown==0:
         dx=bot_x-bot_keeper_x+random.uniform(-80,80)
         dy=abs(bot_y-bot_keeper_y)+random.uniform(50,150)

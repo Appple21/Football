@@ -33,6 +33,7 @@ my_keeper_radius = 10
 my_keeper_speed = 4.0
 my_keeper_ball_attached = False
 my_keeper_kick_cooldown = 0
+MY_KEEPER_ANGLE = 0.0
 
 bot_char = None
 bot_radius = 14
@@ -87,6 +88,10 @@ random_char = None
 
 puddles = []
 
+# Анимация переливания кнопок в меню
+menu_anim_phase = 0
+menu_anim_id = None
+
 characters = [
     {"name": "Гаяр",     "color": "black",  "outline": "darkred",    "radius": 14, "speed": 4.25, "turn": 4.25, "kick": 7,  "accuracy": 10},
     {"name": "Лёша",     "color": "red",    "outline": "darkred",    "radius": 14, "speed": 3.75, "turn": 4,    "kick": 6,  "accuracy": 17.5},
@@ -95,6 +100,46 @@ characters = [
     {"name": "Максим",   "color": "purple", "outline": "darkviolet", "radius": 14, "speed": 3.25, "turn": 4,    "kick": 8,  "accuracy": 12.5},
     {"name": "Ростислав","color": "green",  "outline": "darkviolet", "radius": 14, "speed": 2,    "turn": 3,    "kick": 4,  "accuracy": random.randint(7, 35)},
 ]
+
+selected_char = characters[0]
+random_button_coords = (0, 0, 0, 0)
+random_play_button_coords = (0, 0, 0, 0)
+
+
+def lerp_color(c1, c2, t):
+    """Линейная интерполяция между двумя hex-цветами."""
+    r1, g1, b1 = int(c1[1:3],16), int(c1[3:5],16), int(c1[5:7],16)
+    r2, g2, b2 = int(c2[1:3],16), int(c2[3:5],16), int(c2[5:7],16)
+    r = int(r1 + (r2-r1)*t)
+    g = int(g1 + (g2-g1)*t)
+    b = int(b1 + (b2-b1)*t)
+    return f"#{r:02x}{g:02x}{b:02x}"
+
+
+def rounded_rect(cv, x1, y1, x2, y2, r=12, **kwargs):
+    """Рисует скруглённый прямоугольник на canvas."""
+    points = [
+        x1+r, y1,
+        x2-r, y1,
+        x2,   y1,
+        x2,   y1+r,
+        x2,   y2-r,
+        x2,   y2,
+        x2-r, y2,
+        x1+r, y2,
+        x1,   y2,
+        x1,   y2-r,
+        x1,   y1+r,
+        x1,   y1,
+        x1+r, y1,
+    ]
+    return cv.create_polygon(points, smooth=True, **kwargs)
+
+
+def get_shimmer_color(base_dark, base_light, phase_offset=0):
+    """Возвращает переливающийся цвет на основе глобальной фазы."""
+    t = (math.sin(menu_anim_phase + phase_offset) + 1) / 2
+    return lerp_color(base_dark, base_light, t)
 
 
 def select_random_bot():
@@ -134,7 +179,6 @@ def draw_pillars():
 
 
 def check_pillar_collision(x, y, radius):
-    """Возвращает (x, y, nx, ny, bounce_power). bounce_power=0 если столкновения нет."""
     for pillar in pillars:
         dx = x - pillar["x"]
         dy = y - pillar["y"]
@@ -150,24 +194,6 @@ def check_pillar_collision(x, y, radius):
             y += ny * overlap
             return x, y, nx, ny, pillar["bounce_power"]
     return x, y, 0, 0, 0
-
-
-def push_out_of_pillars(x, y, radius):
-    """Выталкивает персонажа из пилляров без отскока — просто сдвигает наружу."""
-    for pillar in pillars:
-        dx = x - pillar["x"]
-        dy = y - pillar["y"]
-        distance = math.hypot(dx, dy)
-        if distance < radius + pillar["radius"]:
-            if distance > 0:
-                nx = dx / distance
-                ny = dy / distance
-            else:
-                nx, ny = 1, 0
-            overlap = radius + pillar["radius"] - distance
-            x += nx * overlap
-            y += ny * overlap
-    return x, y
 
 
 def generate_puddles():
@@ -308,19 +334,26 @@ def reset_positions():
     game_started = False
 
 
+def stop_menu_animation():
+    global menu_anim_id
+    if menu_anim_id is not None:
+        root.after_cancel(menu_anim_id)
+        menu_anim_id = None
+
+
 def start():
     global in_character_select, game_started, showing_random_char, bot_char
     global bot_radius, bot_speed, bot_turn, bot_kick_power, bot_kick_accuracy
+    stop_menu_animation()
     in_character_select = False
     showing_random_char = False
     game_started = False
     bot_char = select_random_bot()
     bot_radius = bot_char["radius"]
-    # Сильный бот — возвращён к параметрам из первой версии с вратарём игрока.
-    bot_speed = bot_char["speed"] * 0.75
-    bot_turn = bot_char["turn"] * 0.75
-    bot_kick_power = bot_char["kick"] * 1.0   # увеличено с 0.85 до 1.0 (сильнее бьёт)
-    bot_kick_accuracy = bot_char["accuracy"] * 1.2
+    bot_speed = bot_char["speed"] * 0.55
+    bot_turn = bot_char["turn"] * 0.55
+    bot_kick_power = bot_char["kick"] * 0.65
+    bot_kick_accuracy = bot_char["accuracy"] * 1.8
     generate_pillars()
     generate_puddles()
     reset_positions()
@@ -340,23 +373,86 @@ def select_character(char):
     start()
 
 
+# ─── ПЕРЕЛИВАЮЩИЕСЯ КНОПКИ ─────────────────────────────────────────────────
+
+# Цвета переливания для каждого типа кнопки
+SHIMMER_RANDOM  = ("#7a3a00", "#ffaa33")   # оранжевый
+SHIMMER_CHAR    = ("#1a2a3a", "#2e6090")   # стальной синий
+SHIMMER_PLAY    = ("#006622", "#00dd55")   # зелёный
+SHIMMER_OUTLINE = ("#555555", "#ffffff")
+
+# Хранилище id объектов кнопок для перерисовки при анимации
+_menu_button_ids = {}   # key -> (rect_id, ...)
+
+
+def draw_shimmer_button(cv, x1, y1, x2, y2, label, font, text_color,
+                         dark_col, light_col, phase_offset=0.0, tag=None):
+    """Рисует скруглённую переливающуюся кнопку и возвращает (rect_id, text_id)."""
+    fill = get_shimmer_color(dark_col, light_col, phase_offset)
+    outline = get_shimmer_color(SHIMMER_OUTLINE[0], SHIMMER_OUTLINE[1], phase_offset + 1.0)
+    rect_id = rounded_rect(cv, x1, y1, x2, y2, r=12,
+                            fill=fill, outline=outline, width=2)
+    cx, cy = (x1+x2)//2, (y1+y2)//2
+    text_id = cv.create_text(cx, cy, text=label, font=font, fill=text_color)
+    if tag:
+        _menu_button_ids[tag] = (rect_id, text_id, x1, y1, x2, y2,
+                                  label, font, text_color, dark_col, light_col, phase_offset)
+    return rect_id, text_id
+
+
+def animate_menu():
+    """Перерисовывает переливающиеся кнопки в главном меню."""
+    global menu_anim_phase, menu_anim_id
+    menu_anim_phase += 0.06
+
+    for tag, data in _menu_button_ids.items():
+        rect_id, text_id, x1, y1, x2, y2, label, font, text_color, dark_col, light_col, phase_offset = data
+        fill    = get_shimmer_color(dark_col, light_col, menu_anim_phase + phase_offset)
+        outline = get_shimmer_color(SHIMMER_OUTLINE[0], SHIMMER_OUTLINE[1], menu_anim_phase + phase_offset + 1.0)
+        canvas.itemconfig(rect_id, fill=fill, outline=outline)
+
+    menu_anim_id = root.after(40, animate_menu)
+
+
 def show_random_character(char):
     global showing_random_char, random_char
+    global random_play_button_coords
+    stop_menu_animation()
+    _menu_button_ids.clear()
     showing_random_char = True
     random_char = char
     canvas.delete("all")
-    canvas.create_rectangle(0, 0, width, height, fill="darkgreen")
-    canvas.create_text(width//2, height//2-80, text="СЛУЧАЙНЫЙ ВЫБОР", font=("Arial", 28, "bold"), fill="white")
-    canvas.create_text(width//2, height//2-30, text="Вы играете за:", font=("Arial", 18), fill="white")
-    canvas.create_text(width//2, height//2+20, text=char["name"], font=("Arial", 36, "bold"), fill=char["color"])
-    canvas.create_text(width//2, height//2+60,
-        text=f"Скорость: {char['speed']} | Удар: {char['kick']} | Поворот: {char['turn']} | Точность: {char['accuracy']}°",
-        font=("Arial", 12), fill="white")
-    x1, y1, x2, y2 = width//2-80, height//2+100, width//2+80, height//2+140
-    canvas.create_rectangle(x1, y1, x2, y2, fill="gray30", outline="white", width=2)
-    canvas.create_text(width//2, height//2+120, text="ИГРАТЬ", font=("Arial", 18, "bold"), fill="white")
-    global random_play_button_coords
-    random_play_button_coords = (x1, y1, x2, y2)
+
+    # Фон
+    canvas.create_rectangle(0, 0, width, height, fill="#0d2a0d")
+
+    # Декоративная рамка
+    rounded_rect(canvas, 20, 20, width-20, height-20, r=18,
+                 outline="#2a7a2a", width=2, fill="")
+
+    canvas.create_text(width//2, height//2-90, text="🎲 СЛУЧАЙНЫЙ ВЫБОР",
+                       font=("Arial", 22, "bold"), fill="#ffcc44")
+    canvas.create_text(width//2, height//2-45, text="Вы играете за:",
+                       font=("Arial", 15), fill="#aaffaa")
+
+    # Имя персонажа в рамке
+    name_col = char["color"] if char["color"] not in ("black","green") else (
+        "#eeeeee" if char["color"] == "black" else "#88ff88")
+    rounded_rect(canvas, width//2-110, height//2-20, width//2+110, height//2+20,
+                 r=10, fill="#1a3a1a", outline=name_col, width=2)
+    canvas.create_text(width//2, height//2,
+                       text=char["name"], font=("Arial", 30, "bold"), fill=name_col)
+
+    canvas.create_text(width//2, height//2+45,
+        text=f"Скорость: {char['speed']}  |  Удар: {char['kick']}  |  Поворот: {char['turn']}  |  Точность: {char['accuracy']}°",
+        font=("Arial", 11), fill="#cccccc")
+
+    bx1, by1, bx2, by2 = width//2-90, height//2+80, width//2+90, height//2+122
+    draw_shimmer_button(canvas, bx1, by1, bx2, by2,
+                        "▶  ИГРАТЬ", ("Arial", 17, "bold"), "white",
+                        SHIMMER_PLAY[0], SHIMMER_PLAY[1], phase_offset=0.0, tag="play_btn")
+    random_play_button_coords = (bx1, by1, bx2, by2)
+    animate_menu()
 
 
 def select_random_character():
@@ -365,26 +461,67 @@ def select_random_character():
 
 def show_character_select():
     global in_character_select
+    stop_menu_animation()
+    _menu_button_ids.clear()
     in_character_select = True
     canvas.delete("all")
-    canvas.create_rectangle(0, 0, width, height, fill="darkgreen")
-    canvas.create_text(width//2, 40, text="ВЫБОР ПЕРСОНАЖА", font=("Arial", 24, "bold"), fill="white")
-    rand_x1, rand_y1, rand_x2, rand_y2 = width//2-100, 70, width//2+100, 105
-    canvas.create_rectangle(rand_x1, rand_y1, rand_x2, rand_y2, fill="darkorange", outline="white", width=2)
-    canvas.create_text(width//2, 87, text="🎲 СЛУЧАЙНЫЙ ВЫБОР", font=("Arial", 14, "bold"), fill="white")
+
+    # Фон с градиентом (имитация через полосы)
+    for i in range(height):
+        t = i / height
+        r_c = int(0x0d + (0x05 - 0x0d) * t)
+        g_c = int(0x2a + (0x18 - 0x2a) * t)
+        b_c = int(0x0d + (0x28 - 0x0d) * t)
+        canvas.create_line(0, i, width, i, fill=f"#{r_c:02x}{g_c:02x}{b_c:02x}")
+
+    # Декоративная рамка
+    rounded_rect(canvas, 12, 12, width-12, height-12, r=18,
+                 outline="#2a6a3a", width=2, fill="")
+
+    # Заголовок
+    canvas.create_text(width//2+2, 42, text="⚽  ВЫБОР ПЕРСОНАЖА",
+                       font=("Arial", 21, "bold"), fill="#003300")
+    canvas.create_text(width//2, 40, text="⚽  ВЫБОР ПЕРСОНАЖА",
+                       font=("Arial", 21, "bold"), fill="#eeffee")
+
+    # Кнопка «Случайный выбор»
+    rand_x1, rand_y1, rand_x2, rand_y2 = width//2-115, 62, width//2+115, 100
+    draw_shimmer_button(canvas, rand_x1, rand_y1, rand_x2, rand_y2,
+                        "🎲  СЛУЧАЙНЫЙ ВЫБОР", ("Arial", 13, "bold"), "white",
+                        SHIMMER_RANDOM[0], SHIMMER_RANDOM[1],
+                        phase_offset=0.0, tag="rand_btn")
     global random_button_coords
     random_button_coords = (rand_x1, rand_y1, rand_x2, rand_y2)
-    button_width, button_height, start_y, gap = 200, 80, 120, 20
+
+    # Кнопки персонажей
+    btn_w, btn_h, start_y, gap = 220, 76, 112, 10
     for i, char in enumerate(characters):
-        x1 = width//2 - button_width//2
-        y1 = start_y + i * (button_height + gap)
-        x2, y2 = x1 + button_width, y1 + button_height
-        canvas.create_rectangle(x1, y1, x2, y2, fill="gray30", outline="white", width=2)
-        canvas.create_text(width//2, y1+20, text=char["name"], font=("Arial", 16, "bold"), fill=char["color"])
+        x1 = width//2 - btn_w//2
+        y1 = start_y + i * (btn_h + gap)
+        x2, y2 = x1 + btn_w, y1 + btn_h
+
+        tag = f"char_{i}"
+        draw_shimmer_button(canvas, x1, y1+2, x2, y2+2,
+                            "", None, None,
+                            SHIMMER_CHAR[0], SHIMMER_CHAR[1],
+                            phase_offset=i * 0.55, tag=tag)
+
+        # Имя и статы рисуем поверх (не через shimmer_button, чтобы не перекрыть)
+        char_col = char["color"]
+        if char_col in ("black", "green"):
+            char_col = "#ffffff" if char["color"] == "black" else "#88ff88"
+        canvas.create_text(width//2, y1+24, text=char["name"],
+                           font=("Arial", 15, "bold"), fill=char_col)
         canvas.create_text(width//2, y1+50,
-            text=f"Скорость: {char['speed']} | Удар: {char['kick']} | Поворот: {char['turn']} | Точность: {char['accuracy']}°",
-            font=("Arial", 10), fill="white")
+            text=f"Скорость: {char['speed']}  |  Удар: {char['kick']}",
+            font=("Arial", 9), fill="#cccccc")
+        canvas.create_text(width//2, y1+63,
+            text=f"Поворот: {char['turn']}  |  Точность: {char['accuracy']}°",
+            font=("Arial", 9), fill="#aaaaaa")
+
         char["button_coords"] = (x1, y1, x2, y2)
+
+    animate_menu()
 
 
 def on_click(event):
@@ -529,10 +666,6 @@ def update_my_keeper():
 
 
 def update_bot():
-    """
-    Сильный бот — возвращён к параметрам из первой версии с вратарём игрока.
-    Теперь также обходит (выталкивается из) пиллярей как игрок.
-    """
     global bot_x, bot_y, bot_angle, bot_ball_attached, bot_kick_cooldown, bot_delay, bot_wander_timer, bot_steal_delay
     global ball_attached, ball_vx, ball_vy, last_touch, ball_x, ball_y
 
@@ -547,15 +680,15 @@ def update_bot():
 
     bot_wander_timer -= 1
     if bot_wander_timer <= 0:
-        bot_wander_timer = random.randint(20, 50)
-        if random.random() < 0.15:
-            bot_angle += random.uniform(-25, 25)
+        bot_wander_timer = random.randint(30, 70)
+        if random.random() < 0.25:
+            bot_angle += random.uniform(-45, 45)
 
     target_x = ball_x
     target_y = ball_y
 
     if bot_ball_attached:
-        target_x = width/2 + random.uniform(-15, 15)
+        target_x = width/2 + random.uniform(-30, 30)
         target_y = height - margin + 15
 
     dx = target_x - bot_x
@@ -573,9 +706,9 @@ def update_bot():
     rad = math.radians(bot_angle)
     distance_to_target = math.hypot(dx, dy)
 
-    kick_distance = random.randint(80, 280)
+    kick_distance = random.randint(50, 200)
     if bot_ball_attached and distance_to_target < kick_distance and bot_kick_cooldown == 0:
-        target_goal_x = width//2 + random.uniform(-20, 20)
+        target_goal_x = width//2 + random.uniform(-30, 30)
         target_goal_y = height - margin + random.uniform(-5, 10)
         goal_dx = target_goal_x - bot_x
         goal_dy = target_goal_y - bot_y
@@ -587,15 +720,15 @@ def update_bot():
         bot_ball_attached = False
         ball_attached = False
         last_touch = "bot"
-        bot_kick_cooldown = 45
+        bot_kick_cooldown = 70
         return
 
     if not bot_ball_attached and ball_attached and last_touch == "player":
         dist_to_player = math.hypot(player_x - bot_x, player_y - bot_y)
         if dist_to_player < 35:
             if bot_steal_delay == 0:
-                bot_steal_delay = 20
-            elif bot_steal_delay == 1 and random.random() < 0.4:
+                bot_steal_delay = 40
+            elif bot_steal_delay == 1 and random.random() < 0.2:
                 bot_ball_attached = True
                 ball_attached = True
                 last_touch = "bot"
@@ -603,23 +736,21 @@ def update_bot():
 
     if not bot_ball_attached and not ball_attached:
         dist_to_ball = math.hypot(ball_x - bot_x, ball_y - bot_y)
-        if dist_to_ball < 30 and random.random() < 0.85:
+        if dist_to_ball < 30 and random.random() < 0.7:
             bot_ball_attached = True
             ball_attached = True
             last_touch = "bot"
 
     should_move = False
     if bot_ball_attached and distance_to_target > 10:
-        should_move = random.random() < 0.95
+        should_move = random.random() < 0.8
     elif not bot_ball_attached and distance_to_target > 30:
-        should_move = random.random() < 0.85
+        should_move = random.random() < 0.65
 
     if should_move:
         current_speed = bot_speed * (0.5 if is_in_puddle(bot_x, bot_y, bot_radius) else 1.0)
         new_x = max(margin+bot_radius, min(width-margin-bot_radius, bot_x + math.sin(rad)*current_speed))
         new_y = max(margin+bot_radius, min(height-margin-bot_radius, bot_y - math.cos(rad)*current_speed))
-        # Коллизия с пиллярами — бот не проходит сквозь них
-        new_x, new_y = push_out_of_pillars(new_x, new_y, bot_radius)
         bot_x, bot_y = new_x, new_y
 
 
@@ -636,8 +767,8 @@ def update_bot_keeper():
     keeper_left  = width//2 - GOAL_HALF_WIDTH + bot_keeper_radius
     keeper_right = width//2 + GOAL_HALF_WIDTH - bot_keeper_radius
 
-    # Маятник
     bot_keeper_x += bot_keeper_speed * bot_keeper_direction
+
     if bot_keeper_x >= keeper_right:
         bot_keeper_x = keeper_right
         bot_keeper_direction = -1
@@ -645,14 +776,13 @@ def update_bot_keeper():
         bot_keeper_x = keeper_left
         bot_keeper_direction = 1
 
-    # Увеличенная частота прыжков (интервал уменьшен с 50-80 до 30-50)
     if bot_keeper_jump_cooldown == 0:
         jump_amount = 18
         if ball_x < bot_keeper_x:
             bot_keeper_x = max(keeper_left, bot_keeper_x - jump_amount)
         else:
             bot_keeper_x = min(keeper_right, bot_keeper_x + jump_amount)
-        bot_keeper_jump_cooldown = random.randint(30, 50)   # прыгает чаще
+        bot_keeper_jump_cooldown = random.randint(50, 80)
 
     dist_to_ball = math.hypot(ball_x - bot_keeper_x, ball_y - bot_keeper_y)
     if not bot_keeper_ball_attached and dist_to_ball < bot_keeper_radius + ball_radius + 10:
@@ -676,7 +806,8 @@ def update_bot_keeper():
 
 
 def on_press(event):
-    global ball_attached, last_touch, my_keeper_ball_attached, bot_ball_attached, bot_keeper_ball_attached
+    # ── ИСПРАВЛЕНИЕ: объявляем глобальные переменные ──
+    global ball_attached, my_keeper_ball_attached, bot_ball_attached, bot_keeper_ball_attached
     key = event.keysym.lower()
     keys_pressed.add(key)
     if key == "e":

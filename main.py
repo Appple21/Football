@@ -1,5 +1,3 @@
-вратарь немного багается (багованно двигается, дёргается), также сделай вратаря попроще. Также сделай бота нападающего посложнее чуть чуть
-
 import tkinter as tk
 import math
 import random
@@ -28,6 +26,16 @@ player_y = height / 2 + 100
 player_angle = 0.0
 keys_pressed = set()
 
+# --- ВРАТАРЬ ИГРОКА ---
+my_keeper_x = width / 2
+my_keeper_y = height - margin - 10
+my_keeper_radius = 10
+my_keeper_speed = 4.0
+my_keeper_ball_attached = False
+my_keeper_kick_cooldown = 0
+# Угол вратаря всегда смотрит вверх (в поле), не меняется от управления
+MY_KEEPER_ANGLE = 0.0   # смотрит вверх (0 = вверх)
+
 bot_char = None
 bot_radius = 14
 bot_speed = 2.5
@@ -43,12 +51,14 @@ bot_delay = 45
 bot_wander_timer = 0
 bot_steal_delay = 0
 
-# --- ВРАТАРЬ ---
+# --- ВРАТАРЬ БОТА ---
+# Ходит маятником от штанги до штанги, делает маленькие прыжки к мячу
 bot_keeper_x = width / 2
 bot_keeper_y = margin + 10
 bot_keeper_radius = 10
-bot_keeper_speed = 5.0        # Быстрый вратарь
-bot_keeper_direction = 1
+bot_keeper_speed = 2.0          # скорость маятника
+bot_keeper_direction = 1        # направление маятника: +1 вправо, -1 влево
+bot_keeper_jump_cooldown = 0    # кулдаун прыжка
 bot_keeper_ball_attached = False
 bot_keeper_kick_cooldown = 0
 
@@ -64,6 +74,8 @@ last_touch = None
 pillars = []
 player_circle = None
 player_line = None
+my_keeper_circle = None
+my_keeper_line = None
 bot_circle = None
 bot_line = None
 bot_keeper_circle = None
@@ -202,20 +214,38 @@ def draw_field():
 
 
 def create_game_objects():
-    global player_circle, player_line, bot_circle, bot_line, bot_keeper_circle, bot_keeper_line, ball
+    global player_circle, player_line, my_keeper_circle, my_keeper_line
+    global bot_circle, bot_line, bot_keeper_circle, bot_keeper_line, ball
+
     player_circle = canvas.create_oval(
         player_x-player_radius, player_y-player_radius, player_x+player_radius, player_y+player_radius,
         fill=selected_char["color"], outline=selected_char["outline"], width=2)
     player_line = canvas.create_line(player_x, player_y, player_x, player_y-player_radius, fill="white", width=2)
+
+    # Вратарь игрока — смотрит вверх (в поле), жёлтый
+    my_keeper_circle = canvas.create_oval(
+        my_keeper_x-my_keeper_radius, my_keeper_y-my_keeper_radius,
+        my_keeper_x+my_keeper_radius, my_keeper_y+my_keeper_radius,
+        fill="yellow", outline="darkorange", width=2)
+    my_keeper_line = canvas.create_line(
+        my_keeper_x, my_keeper_y,
+        my_keeper_x, my_keeper_y - my_keeper_radius,
+        fill="white", width=2)
+
     bot_circle = canvas.create_oval(
         bot_x-bot_radius, bot_y-bot_radius, bot_x+bot_radius, bot_y+bot_radius,
         fill=bot_char["color"], outline=bot_char["outline"], width=2)
     bot_line = canvas.create_line(bot_x, bot_y, bot_x, bot_y-bot_radius, fill="white", width=2)
+
     bot_keeper_circle = canvas.create_oval(
         bot_keeper_x-bot_keeper_radius, bot_keeper_y-bot_keeper_radius,
         bot_keeper_x+bot_keeper_radius, bot_keeper_y+bot_keeper_radius,
         fill="cyan", outline="darkblue", width=2)
-    bot_keeper_line = canvas.create_line(bot_keeper_x, bot_keeper_y, bot_keeper_x, bot_keeper_y-bot_keeper_radius, fill="white", width=2)
+    bot_keeper_line = canvas.create_line(
+        bot_keeper_x, bot_keeper_y,
+        bot_keeper_x, bot_keeper_y - bot_keeper_radius,
+        fill="white", width=2)
+
     ball = canvas.create_oval(
         ball_x-ball_radius, ball_y-ball_radius, ball_x+ball_radius, ball_y+ball_radius,
         fill="white", outline="black")
@@ -226,8 +256,10 @@ loop_after_id = None
 
 def reset_positions():
     global player_x, player_y, player_angle
+    global my_keeper_x, my_keeper_y, my_keeper_ball_attached, my_keeper_kick_cooldown
     global bot_x, bot_y, bot_angle, bot_ball_attached, bot_kick_cooldown, bot_delay, bot_wander_timer, bot_steal_delay
-    global bot_keeper_x, bot_keeper_y, bot_keeper_direction, bot_keeper_ball_attached, bot_keeper_kick_cooldown
+    global bot_keeper_x, bot_keeper_y, bot_keeper_direction, bot_keeper_jump_cooldown
+    global bot_keeper_ball_attached, bot_keeper_kick_cooldown
     global ball_x, ball_y, ball_vx, ball_vy, ball_attached, goal_checked, game_started, loop_after_id, last_touch
 
     if loop_after_id is not None:
@@ -235,16 +267,24 @@ def reset_positions():
         loop_after_id = None
 
     player_x, player_y, player_angle = width/2, height/2+100, 0.0
+
+    my_keeper_x, my_keeper_y = width/2, height - margin - 10
+    my_keeper_ball_attached = False
+    my_keeper_kick_cooldown = 0
+
     bot_x, bot_y, bot_angle = width/2, height/2-100, 180.0
     bot_ball_attached = False
     bot_kick_cooldown = 0
     bot_delay = 45
     bot_wander_timer = 0
     bot_steal_delay = 0
+
     bot_keeper_x, bot_keeper_y = width/2, margin+10
     bot_keeper_direction = 1
+    bot_keeper_jump_cooldown = 0
     bot_keeper_ball_attached = False
     bot_keeper_kick_cooldown = 0
+
     ball_x, ball_y = width/2, height/2
     ball_vx, ball_vy = 0, 0
     ball_attached = False
@@ -261,10 +301,11 @@ def start():
     game_started = False
     bot_char = select_random_bot()
     bot_radius = bot_char["radius"]
-    bot_speed = bot_char["speed"] * 0.6
-    bot_turn = bot_char["turn"] * 0.6
-    bot_kick_power = bot_char["kick"] * 0.7
-    bot_kick_accuracy = bot_char["accuracy"] * 1.5
+    # Полевой бот — полегче
+    bot_speed = bot_char["speed"] * 0.55
+    bot_turn = bot_char["turn"] * 0.55
+    bot_kick_power = bot_char["kick"] * 0.65
+    bot_kick_accuracy = bot_char["accuracy"] * 1.8  # больше = менее точный
     generate_pillars()
     generate_puddles()
     reset_positions()
@@ -358,21 +399,29 @@ def update_visuals():
     rad = math.radians(player_angle)
     canvas.coords(player_line, player_x, player_y,
         player_x + math.sin(rad)*player_radius, player_y - math.cos(rad)*player_radius)
+
+    # Вратарь игрока — стрелка всегда смотрит вверх (в поле), не вращается
+    canvas.coords(my_keeper_circle,
+        my_keeper_x-my_keeper_radius, my_keeper_y-my_keeper_radius,
+        my_keeper_x+my_keeper_radius, my_keeper_y+my_keeper_radius)
+    canvas.coords(my_keeper_line,
+        my_keeper_x, my_keeper_y,
+        my_keeper_x, my_keeper_y - my_keeper_radius)
+
     canvas.coords(bot_circle,
         bot_x-bot_radius, bot_y-bot_radius, bot_x+bot_radius, bot_y+bot_radius)
     bot_rad = math.radians(bot_angle)
     canvas.coords(bot_line, bot_x, bot_y,
         bot_x + math.sin(bot_rad)*bot_radius, bot_y - math.cos(bot_rad)*bot_radius)
+
     canvas.coords(bot_keeper_circle,
         bot_keeper_x-bot_keeper_radius, bot_keeper_y-bot_keeper_radius,
         bot_keeper_x+bot_keeper_radius, bot_keeper_y+bot_keeper_radius)
-    keeper_angle = math.atan2(ball_x - bot_keeper_x, ball_y - bot_keeper_y)
-    canvas.coords(
-        bot_keeper_line,
+    # Стрелка вратаря бота всегда вниз (в поле)
+    canvas.coords(bot_keeper_line,
         bot_keeper_x, bot_keeper_y,
-        bot_keeper_x + math.sin(keeper_angle) * bot_keeper_radius,
-        bot_keeper_y + math.cos(keeper_angle) * bot_keeper_radius
-    )
+        bot_keeper_x, bot_keeper_y + bot_keeper_radius)
+
     canvas.coords(ball,
         ball_x-ball_radius, ball_y-ball_radius, ball_x+ball_radius, ball_y+ball_radius)
 
@@ -392,25 +441,26 @@ def check_goal():
 
 
 def try_pick_ball():
-    """
-    Игрок пытается подобрать мяч.
-    Отбор у вратаря — только если игрок физически рядом с вратарём,
-    НЕ просто рядом с воротами.
-    """
-    global ball_attached, last_touch, bot_ball_attached, bot_keeper_ball_attached
+    """Полевой игрок подбирает мяч."""
+    global ball_attached, last_touch, bot_ball_attached, bot_keeper_ball_attached, my_keeper_ball_attached
 
     dx = ball_x - player_x
     dy = ball_y - player_y
     distance = math.hypot(dx, dy)
 
     if distance < 30:
-        # ФИХ: Отбираем у вратаря только если мы близко к самому вратарю
         if bot_keeper_ball_attached:
             dist_to_keeper = math.hypot(player_x - bot_keeper_x, player_y - bot_keeper_y)
             if dist_to_keeper < bot_keeper_radius + player_radius + 20:
                 bot_keeper_ball_attached = False
             else:
-                return  # Вратарь держит мяч, мы до него не дотягиваемся
+                return
+        if my_keeper_ball_attached:
+            dist_to_my_keeper = math.hypot(player_x - my_keeper_x, player_y - my_keeper_y)
+            if dist_to_my_keeper < my_keeper_radius + player_radius + 20:
+                my_keeper_ball_attached = False
+            else:
+                return
         if bot_ball_attached:
             bot_ball_attached = False
         ball_attached = True
@@ -429,12 +479,55 @@ def kick_ball():
     ball_vy = -math.cos(rad) * kick_power
 
 
+def update_my_keeper():
+    """
+    Вратарь игрока: управляется стрелками влево/вправо.
+    Вперёд/назад — нельзя.
+    Угол (стрелка) не меняется — всегда смотрит в поле.
+    При контакте с мячом подбирает его и бьёт вперёд.
+    """
+    global my_keeper_x, my_keeper_ball_attached, my_keeper_kick_cooldown
+    global ball_attached, ball_vx, ball_vy, last_touch, ball_x, ball_y
+    global bot_ball_attached, bot_keeper_ball_attached
+
+    if my_keeper_kick_cooldown > 0:
+        my_keeper_kick_cooldown -= 1
+
+    # Зона движения — в рамках ворот
+    keeper_left  = width//2 - GOAL_HALF_WIDTH + my_keeper_radius
+    keeper_right = width//2 + GOAL_HALF_WIDTH - my_keeper_radius
+
+    if "left" in keys_pressed:
+        my_keeper_x = max(keeper_left, my_keeper_x - my_keeper_speed)
+    if "right" in keys_pressed:
+        my_keeper_x = min(keeper_right, my_keeper_x + my_keeper_speed)
+
+    # Подбор мяча при физическом контакте
+    dist_to_ball = math.hypot(ball_x - my_keeper_x, ball_y - my_keeper_y)
+    if not my_keeper_ball_attached and dist_to_ball < my_keeper_radius + ball_radius + 10:
+        ball_attached = False
+        bot_ball_attached = False
+        bot_keeper_ball_attached = False
+        my_keeper_ball_attached = True
+        ball_attached = True
+        last_touch = "my_keeper"
+
+    # Удар вперёд в поле при нажатии пробела или E
+    if my_keeper_ball_attached and my_keeper_kick_cooldown == 0:
+        if "space" in keys_pressed or "e" in keys_pressed:
+            # Бьёт вверх в поле с небольшим разбросом
+            deviation = random.uniform(-15, 15)
+            rad = math.radians(deviation)  # 0 = вверх, добавляем отклонение
+            ball_vx = math.sin(rad) * 10
+            ball_vy = -math.cos(rad) * 10
+            my_keeper_ball_attached = False
+            ball_attached = False
+            last_touch = "my_keeper"
+            my_keeper_kick_cooldown = 30
+
+
 def update_bot():
-    """
-    ФИХ: Отбор мяча происходит мгновенно — мяч сразу прикрепляется к боту
-    через механизм ball_attached/last_touch, нет промежуточного состояния
-    когда мяч "на поле".
-    """
+    """Полевой бот — полегче."""
     global bot_x, bot_y, bot_angle, bot_ball_attached, bot_kick_cooldown, bot_delay, bot_wander_timer, bot_steal_delay
     global ball_attached, ball_vx, ball_vy, last_touch, ball_x, ball_y
 
@@ -449,15 +542,15 @@ def update_bot():
 
     bot_wander_timer -= 1
     if bot_wander_timer <= 0:
-        bot_wander_timer = random.randint(20, 50)
-        if random.random() < 0.2:
-            bot_angle += random.uniform(-40, 40)
+        bot_wander_timer = random.randint(30, 70)
+        if random.random() < 0.25:
+            bot_angle += random.uniform(-45, 45)
 
     target_x = ball_x
     target_y = ball_y
 
     if bot_ball_attached:
-        target_x = width/2 + random.uniform(-25, 25)
+        target_x = width/2 + random.uniform(-30, 30)
         target_y = height - margin + 15
 
     dx = target_x - bot_x
@@ -475,9 +568,10 @@ def update_bot():
     rad = math.radians(bot_angle)
     distance_to_target = math.hypot(dx, dy)
 
-    kick_distance = random.randint(60, 250)
+    # Бьёт с умеренного расстояния
+    kick_distance = random.randint(50, 200)
     if bot_ball_attached and distance_to_target < kick_distance and bot_kick_cooldown == 0:
-        target_goal_x = width//2 + random.uniform(-25, 25)
+        target_goal_x = width//2 + random.uniform(-30, 30)
         target_goal_y = height - margin + random.uniform(-5, 10)
         goal_dx = target_goal_x - bot_x
         goal_dy = target_goal_y - bot_y
@@ -489,37 +583,34 @@ def update_bot():
         bot_ball_attached = False
         ball_attached = False
         last_touch = "bot"
-        bot_kick_cooldown = 60
+        bot_kick_cooldown = 70  # дольше кулдаун = реже бьёт
         return
 
-    # ФИХ: Отбор у игрока — мяч сразу считается у бота,
-    # ball_attached остаётся True, но last_touch меняется на "bot".
-    # Мяч будет корректно следовать за ботом в game_loop.
+    # Отбор — медленнее реагирует
     if not bot_ball_attached and ball_attached and last_touch == "player":
         dist_to_player = math.hypot(player_x - bot_x, player_y - bot_y)
         if dist_to_player < 35:
             if bot_steal_delay == 0:
-                bot_steal_delay = 30
-            elif bot_steal_delay == 1 and random.random() < 0.25:
-                # Отбираем: мяч сразу у бота
+                bot_steal_delay = 40           # долгая задержка перед отбором
+            elif bot_steal_delay == 1 and random.random() < 0.2:  # низкий шанс
                 bot_ball_attached = True
-                ball_attached = True       # мяч по-прежнему "держится"
-                last_touch = "bot"         # но теперь ботом
+                ball_attached = True
+                last_touch = "bot"
                 bot_steal_delay = 0
 
     # Подбор свободного мяча
     if not bot_ball_attached and not ball_attached:
         dist_to_ball = math.hypot(ball_x - bot_x, ball_y - bot_y)
-        if dist_to_ball < 30 and random.random() < 0.8:
+        if dist_to_ball < 30 and random.random() < 0.7:
             bot_ball_attached = True
             ball_attached = True
             last_touch = "bot"
 
     should_move = False
     if bot_ball_attached and distance_to_target > 10:
-        should_move = random.random() < 0.9
+        should_move = random.random() < 0.8
     elif not bot_ball_attached and distance_to_target > 30:
-        should_move = random.random() < 0.75
+        should_move = random.random() < 0.65
 
     if should_move:
         current_speed = bot_speed * (0.5 if is_in_puddle(bot_x, bot_y, bot_radius) else 1.0)
@@ -530,22 +621,25 @@ def update_bot():
 
 def update_bot_keeper():
     """
-    ФИХ 1: Вратарь следит за мячом и движется к нему, когда мяч летит в ворота.
-    ФИХ 2: Отбор мяча только физически рядом с вратарём.
-    ФИХ 3: После отбора мяч немедленно привязывается к вратарю — нет паузы.
+    Вратарь бота:
+    - Ходит маятником от штанги до штанги
+    - Периодически делает маленький прыжок в сторону мяча
+    - НЕ следует за мячом постоянно
+    - Подбирает мяч только при физическом контакте
     """
-    global bot_keeper_x, bot_keeper_y, bot_keeper_direction, bot_keeper_ball_attached, bot_keeper_kick_cooldown
+    global bot_keeper_x, bot_keeper_direction, bot_keeper_jump_cooldown
+    global bot_keeper_ball_attached, bot_keeper_kick_cooldown
     global ball_attached, ball_vx, ball_vy, last_touch, ball_x, ball_y
 
     if bot_keeper_kick_cooldown > 0:
         bot_keeper_kick_cooldown -= 1
+    if bot_keeper_jump_cooldown > 0:
+        bot_keeper_jump_cooldown -= 1
 
-    # Зона движения вратаря
     keeper_left  = width//2 - GOAL_HALF_WIDTH + bot_keeper_radius
     keeper_right = width//2 + GOAL_HALF_WIDTH - bot_keeper_radius
 
-    # Постоянное движение от штанги до штанги.
-    # За мячом не следует.
+    # --- Маятник ---
     bot_keeper_x += bot_keeper_speed * bot_keeper_direction
 
     if bot_keeper_x >= keeper_right:
@@ -555,30 +649,25 @@ def update_bot_keeper():
         bot_keeper_x = keeper_left
         bot_keeper_direction = 1
 
-    # Вратарь берёт мяч если тот рядом (физически, не просто в зоне ворот)
+    # --- Маленький прыжок в сторону мяча раз в ~60 тиков ---
+    if bot_keeper_jump_cooldown == 0:
+        jump_amount = 18  # небольшой прыжок
+        if ball_x < bot_keeper_x:
+            bot_keeper_x = max(keeper_left, bot_keeper_x - jump_amount)
+        else:
+            bot_keeper_x = min(keeper_right, bot_keeper_x + jump_amount)
+        bot_keeper_jump_cooldown = random.randint(50, 80)
+
+    # --- Подбор мяча при физическом контакте ---
     dist_to_ball = math.hypot(ball_x - bot_keeper_x, ball_y - bot_keeper_y)
-
-    # Прыжок, если мяч близко по горизонтали
-    jump_trigger = GOAL_HALF_WIDTH / 4
-    if abs(ball_x - bot_keeper_x) <= jump_trigger:
-        jump_dir = 1 if ball_x > bot_keeper_x else -1
-        bot_keeper_x += jump_dir * bot_keeper_speed * 2
-
-        if bot_keeper_x > keeper_right:
-            bot_keeper_x = keeper_right
-        elif bot_keeper_x < keeper_left:
-            bot_keeper_x = keeper_left
-
-
-    if not bot_keeper_ball_attached and dist_to_ball < bot_keeper_radius + ball_radius + 12:
-        # Отбираем мяч у кого угодно
+    if not bot_keeper_ball_attached and dist_to_ball < bot_keeper_radius + ball_radius + 10:
         ball_attached = False
         bot_ball_attached = False
         bot_keeper_ball_attached = True
         ball_attached = True
         last_touch = "bot_keeper"
 
-    # Вратарь пасует когда держит мяч
+    # --- Пас к боту ---
     if bot_keeper_ball_attached and bot_keeper_kick_cooldown == 0:
         dx = bot_x - bot_keeper_x + random.uniform(-80, 80)
         dy = abs(bot_y - bot_keeper_y) + random.uniform(50, 150)
@@ -601,12 +690,15 @@ def on_press(event):
     if key == "space":
         if ball_attached and last_touch == "player":
             kick_ball()
+        elif my_keeper_ball_attached:
+            pass  # обрабатывается в update_my_keeper
         else:
             try_pick_ball()
     if key == "q":
         ball_attached = False
         bot_ball_attached = False
         bot_keeper_ball_attached = False
+        my_keeper_ball_attached = False
 
 
 def on_release(event):
@@ -615,8 +707,10 @@ def on_release(event):
 
 def game_loop():
     global player_x, player_y, player_angle
+    global my_keeper_x, my_keeper_ball_attached, my_keeper_kick_cooldown
     global bot_x, bot_y, bot_angle, bot_ball_attached, bot_kick_cooldown, bot_delay, bot_wander_timer, bot_steal_delay
-    global bot_keeper_x, bot_keeper_y, bot_keeper_direction, bot_keeper_ball_attached, bot_keeper_kick_cooldown
+    global bot_keeper_x, bot_keeper_y, bot_keeper_direction, bot_keeper_jump_cooldown
+    global bot_keeper_ball_attached, bot_keeper_kick_cooldown
     global ball_x, ball_y, ball_vx, ball_vy, ball_attached, goal_checked, game_started, loop_after_id, last_touch
 
     if game_started:
@@ -625,16 +719,19 @@ def game_loop():
 
     def loop():
         global player_x, player_y, player_angle
+        global my_keeper_x, my_keeper_ball_attached, my_keeper_kick_cooldown
         global bot_x, bot_y, bot_angle, bot_ball_attached, bot_kick_cooldown, bot_delay, bot_wander_timer, bot_steal_delay
-        global bot_keeper_x, bot_keeper_y, bot_keeper_direction, bot_keeper_ball_attached, bot_keeper_kick_cooldown
+        global bot_keeper_x, bot_keeper_y, bot_keeper_direction, bot_keeper_jump_cooldown
+        global bot_keeper_ball_attached, bot_keeper_kick_cooldown
         global ball_x, ball_y, ball_vx, ball_vy, ball_attached, goal_checked, loop_after_id, last_touch
 
-        if "left" in keys_pressed or "a" in keys_pressed:
+        # Полевой игрок: повороты A/D, движение W — вперёд, S — назад
+        if "a" in keys_pressed:
             player_angle -= turn_senor
-        if "right" in keys_pressed or "d" in keys_pressed:
+        if "d" in keys_pressed:
             player_angle += turn_senor
 
-        if "up" in keys_pressed or "w" in keys_pressed:
+        if "w" in keys_pressed:
             rad = math.radians(player_angle)
             current_speed = player_speed * 0.5 if is_in_puddle(player_x, player_y, player_radius) else player_speed
             new_x = max(margin+player_radius, min(width-margin-player_radius, player_x + math.sin(rad)*current_speed))
@@ -642,7 +739,7 @@ def game_loop():
             new_x, new_y, nx, ny, bounce = check_pillar_collision(new_x, new_y, player_radius)
             player_x, player_y = new_x, new_y
 
-        if "down" in keys_pressed or "s" in keys_pressed:
+        if "s" in keys_pressed:
             rad = math.radians(player_angle)
             current_speed = player_speed * 0.5 if is_in_puddle(player_x, player_y, player_radius) else player_speed
             new_x = max(margin+player_radius, min(width-margin-player_radius, player_x - math.sin(rad)*current_speed))
@@ -650,6 +747,7 @@ def game_loop():
             new_x, new_y, nx, ny, bounce = check_pillar_collision(new_x, new_y, player_radius)
             player_x, player_y = new_x, new_y
 
+        update_my_keeper()
         update_bot()
         update_bot_keeper()
 
@@ -668,7 +766,11 @@ def game_loop():
             elif last_touch == "bot_keeper":
                 offset = bot_keeper_radius + ball_radius + 4
                 ball_x = bot_keeper_x
-                ball_y = bot_keeper_y - offset
+                ball_y = bot_keeper_y + offset  # мяч перед вратарём (вниз = в поле)
+            elif last_touch == "my_keeper":
+                offset = my_keeper_radius + ball_radius + 4
+                ball_x = my_keeper_x
+                ball_y = my_keeper_y - offset  # мяч перед вратарём (вверх = в поле)
         else:
             ball_x += ball_vx
             ball_y += ball_vy

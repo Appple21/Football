@@ -18,11 +18,36 @@ player_radius = 14
 player_speed = 3
 turn_senor = 4
 kick_power = 10
-kick_accuracy = 0  # неточность удара в градусах
+kick_accuracy = 0
 player_x = width / 2
 player_y = height / 2 + 100
 player_angle = 0.0
 keys_pressed = set()
+
+# параметры бота
+bot_char = None
+bot_radius = 14
+bot_speed = 2.5
+bot_turn = 3
+bot_kick_power = 8
+bot_kick_accuracy = 15
+bot_x = width / 2
+bot_y = height / 2 - 100
+bot_angle = 180.0
+bot_ball_attached = False
+bot_kick_cooldown = 0
+bot_delay = 45
+bot_wander_timer = 0
+bot_steal_delay = 0
+
+# параметры вратаря бота
+bot_keeper_x = width / 2
+bot_keeper_y = margin + 10
+bot_keeper_radius = 10
+bot_keeper_speed = 1.2
+bot_keeper_direction = 1
+bot_keeper_ball_attached = False
+bot_keeper_kick_cooldown = 0
 
 # мяч
 ball_radius = 8
@@ -32,15 +57,29 @@ ball_vx = 0
 ball_vy = 0
 ball_attached = False
 goal_checked = False
+last_touch = None
+
+# Столбы
+pillars = []  # Список столбов: {"x": x, "y": y, "radius": r}
 
 # Графические объекты
 player_circle = None
 player_line = None
+bot_circle = None
+bot_line = None
+bot_keeper_circle = None
+bot_keeper_line = None
 ball = None
+pillar_objects = []  # ID объектов столбов на canvas
 
 # Флаги
 in_character_select = True
 game_started = False
+showing_random_char = False
+random_char = None
+
+# Лужи
+puddles = []
 
 characters = [
     {
@@ -51,7 +90,7 @@ characters = [
         "speed": 4.25,
         "turn": 4.25,
         "kick": 7,
-        "accuracy": 20  # неточность в градусах (чем больше, тем хуже)
+        "accuracy": 10
     },
     {
         "name": "Лёша",
@@ -61,7 +100,7 @@ characters = [
         "speed": 3.75,
         "turn": 4,
         "kick": 7,
-        "accuracy": 35
+        "accuracy": 17.5
     },
     {
         "name": "Климентий",
@@ -71,7 +110,7 @@ characters = [
         "speed": 3,
         "turn": 4,
         "kick": 20,
-        "accuracy": 50
+        "accuracy": 25
     },
     {
         "name": "Петя",
@@ -81,7 +120,7 @@ characters = [
         "speed": 4,
         "turn": 7,
         "kick": 9,
-        "accuracy": 25
+        "accuracy": 12.5
     },
     {
         "name": "Максим",
@@ -91,7 +130,7 @@ characters = [
         "speed": 3.25,
         "turn": 4,
         "kick": 8,
-        "accuracy": 25
+        "accuracy": 12.5
     },
     {
         "name": "Ростислав",
@@ -101,9 +140,181 @@ characters = [
         "speed": 2,
         "turn": 3,
         "kick": 4,
-        "accuracy": random.randint(15, 75)
+        "accuracy": random.randint(7, 35)
     }
 ]
+
+
+def select_random_bot():
+    """Выбирает случайного бота из персонажей (не такого же как игрок)"""
+    available = [c for c in characters if c != selected_char]
+    return random.choice(available)
+
+
+def generate_pillars():
+    """Генерирует 4 столба в центрах четвертей поля"""
+    global pillars
+    pillars = []
+    
+    # Поле от margin до width-margin по X и от margin до height-margin по Y
+    # 4 четверти: левая верхняя, правая верхняя, левая нижняя, правая нижняя
+    quarter_width = (width - 2 * margin) / 2
+    quarter_height = (height - 2 * margin) / 2
+    
+    centers = [
+        (margin + quarter_width / 2, margin + quarter_height / 2),           # Левая верхняя
+        (width - margin - quarter_width / 2, margin + quarter_height / 2),   # Правая верхняя
+        (margin + quarter_width / 2, height - margin - quarter_height / 2),  # Левая нижняя
+        (width - margin - quarter_width / 2, height - margin - quarter_height / 2)  # Правая нижняя
+    ]
+    
+    for cx, cy in centers:
+        pillar_radius = random.randint(15, 25)
+        # Случайная сила отскока
+        bounce_power = random.uniform(1.5, 2.5)
+        
+        pillars.append({
+            "x": cx,
+            "y": cy,
+            "radius": pillar_radius,
+            "bounce_power": bounce_power
+        })
+
+
+def draw_pillars():
+    """Рисует столбы на поле"""
+    global pillar_objects
+    pillar_objects = []
+    
+    for pillar in pillars:
+        x1 = pillar["x"] - pillar["radius"]
+        y1 = pillar["y"] - pillar["radius"]
+        x2 = pillar["x"] + pillar["radius"]
+        y2 = pillar["y"] + pillar["radius"]
+        
+        # Основной столб
+        obj = canvas.create_oval(x1, y1, x2, y2, fill="brown", outline="saddlebrown", width=3)
+        pillar_objects.append(obj)
+        
+        # Блик на столбе
+        highlight_radius = pillar["radius"] * 0.4
+        hx1 = pillar["x"] - highlight_radius
+        hy1 = pillar["y"] - highlight_radius
+        hx2 = pillar["x"] + highlight_radius
+        hy2 = pillar["y"] + highlight_radius
+        canvas.create_oval(hx1, hy1, hx2, hy2, fill="peru", outline="")
+
+
+def check_pillar_collision(x, y, radius):
+    """Проверяет столкновение с столбами и возвращает новую скорость"""
+    for pillar in pillars:
+        dx = x - pillar["x"]
+        dy = y - pillar["y"]
+        distance = math.hypot(dx, dy)
+        
+        if distance < radius + pillar["radius"]:
+            # Отскок от столба
+            # Нормализуем направление
+            if distance > 0:
+                nx = dx / distance
+                ny = dy / distance
+            else:
+                nx = 1
+                ny = 0
+            
+            # Отодвигаем объект от столба
+            overlap = radius + pillar["radius"] - distance
+            x += nx * overlap
+            y += ny * overlap
+            
+            return x, y, nx, ny, pillar["bounce_power"]
+    
+    return x, y, 0, 0, 0
+
+
+def generate_puddles():
+    """Генерирует случайные лужи на поле"""
+    global puddles
+    puddles = []
+    
+    num_puddles = random.randint(3, 6)
+    
+    for _ in range(num_puddles):
+        # Не создаём лужи на столбах
+        while True:
+            x = random.randint(margin + 30, width - margin - 30)
+            y = random.randint(margin + 30, height - margin - 30)
+            
+            # Проверяем, не на столбе ли
+            on_pillar = False
+            for pillar in pillars:
+                if math.hypot(x - pillar["x"], y - pillar["y"]) < pillar["radius"] + 40:
+                    on_pillar = True
+                    break
+            
+            if not on_pillar:
+                break
+        
+        main_radius = random.randint(20, 50)
+        
+        puddles.append({
+            "x": x,
+            "y": y,
+            "radius": main_radius,
+            "ovals": []
+        })
+        
+        num_ovals = random.randint(2, 4)
+        for j in range(num_ovals):
+            offset_x = random.randint(-15, 15)
+            offset_y = random.randint(-15, 15)
+            radius_x = main_radius + random.randint(-10, 20)
+            radius_y = main_radius * (0.5 + random.random() * 0.5)
+            alpha = random.randint(20, 40)
+            
+            puddles[-1]["ovals"].append({
+                "x": x + offset_x,
+                "y": y + offset_y,
+                "radius_x": radius_x,
+                "radius_y": radius_y,
+                "alpha": alpha
+            })
+
+
+def draw_puddles():
+    """Рисует лужи на поле"""
+    for puddle in puddles:
+        for oval in puddle["ovals"]:
+            x1 = oval["x"] - oval["radius_x"]
+            y1 = oval["y"] - oval["radius_y"]
+            x2 = oval["x"] + oval["radius_x"]
+            y2 = oval["y"] + oval["radius_y"]
+            
+            if oval["alpha"] < 25:
+                stipple = "gray75"
+            elif oval["alpha"] < 35:
+                stipple = "gray50"
+            else:
+                stipple = "gray25"
+            
+            canvas.create_oval(
+                x1, y1, x2, y2,
+                fill="navy",
+                stipple=stipple,
+                outline=""
+            )
+
+
+def is_in_puddle(x, y, radius_check=ball_radius):
+    """Проверяет, находится ли точка в луже"""
+    for puddle in puddles:
+        for oval in puddle["ovals"]:
+            dx = x - oval["x"]
+            dy = y - oval["y"]
+            distance = math.hypot(dx / oval["radius_x"], dy / oval["radius_y"])
+            if distance < 1.0:
+                return True
+    return False
 
 
 def draw_field():
@@ -122,14 +333,36 @@ def draw_field():
     canvas.create_rectangle(width // 2 - 45, margin, width // 2 + 45, margin + 50, outline="white", width=3)
     canvas.create_rectangle(width // 2 - 45, height - margin - 50, width // 2 + 45, height - margin, outline="white",
                             width=3)
-    # ворота
-    canvas.create_rectangle(width // 2 - 30, margin - 15, width // 2 + 30, margin, outline="white", width=3)
-    canvas.create_rectangle(width // 2 - 30, height - margin, width // 2 + 30, height - margin + 15, outline="white",
-                            width=3)
+    
+    # Ворота бота (верхние) - синие
+    canvas.create_rectangle(width // 2 - 30, margin - 15, width // 2 + 30, margin, 
+                          outline="blue", width=3, fill="darkblue")
+    canvas.create_text(
+        width // 2, margin - 40,
+        text=f"{bot_char['name']} (БОТ)",
+        font=("Arial", 14, "bold"),
+        fill="lightblue"
+    )
+    
+    # Ворота игрока (нижние) - красные
+    canvas.create_rectangle(width // 2 - 30, height - margin, width // 2 + 30, height - margin + 15, 
+                          outline="red", width=3, fill="darkred")
+    canvas.create_text(
+        width // 2, height - margin + 40,
+        text=f"{selected_char['name']} (ИГРОК)",
+        font=("Arial", 14, "bold"),
+        fill="pink"
+    )
+    
+    # Рисуем лужи
+    draw_puddles()
+    
+    # Рисуем столбы
+    draw_pillars()
 
 
 def create_game_objects():
-    global player_circle, player_line, ball
+    global player_circle, player_line, bot_circle, bot_line, bot_keeper_circle, bot_keeper_line, ball
 
     player_circle = canvas.create_oval(
         player_x - player_radius, player_y - player_radius,
@@ -143,6 +376,30 @@ def create_game_objects():
         fill="white", width=2
     )
 
+    bot_circle = canvas.create_oval(
+        bot_x - bot_radius, bot_y - bot_radius,
+        bot_x + bot_radius, bot_y + bot_radius,
+        fill=bot_char["color"], outline=bot_char["outline"], width=2
+    )
+
+    bot_line = canvas.create_line(
+        bot_x, bot_y,
+        bot_x, bot_y - bot_radius,
+        fill="white", width=2
+    )
+
+    bot_keeper_circle = canvas.create_oval(
+        bot_keeper_x - bot_keeper_radius, bot_keeper_y - bot_keeper_radius,
+        bot_keeper_x + bot_keeper_radius, bot_keeper_y + bot_keeper_radius,
+        fill="cyan", outline="darkblue", width=2
+    )
+
+    bot_keeper_line = canvas.create_line(
+        bot_keeper_x, bot_keeper_y,
+        bot_keeper_x, bot_keeper_y - bot_keeper_radius,
+        fill="white", width=2
+    )
+
     ball = canvas.create_oval(
         ball_x - ball_radius, ball_y - ball_radius,
         ball_x + ball_radius, ball_y + ball_radius,
@@ -150,13 +407,37 @@ def create_game_objects():
     )
 
 
+loop_after_id = None
+
+
 def reset_positions():
     global player_x, player_y, player_angle
-    global ball_x, ball_y, ball_vx, ball_vy, ball_attached, goal_checked, game_started
+    global bot_x, bot_y, bot_angle, bot_ball_attached, bot_kick_cooldown, bot_delay, bot_wander_timer, bot_steal_delay
+    global bot_keeper_x, bot_keeper_y, bot_keeper_direction, bot_keeper_ball_attached, bot_keeper_kick_cooldown
+    global ball_x, ball_y, ball_vx, ball_vy, ball_attached, goal_checked, game_started, loop_after_id, last_touch
+
+    if loop_after_id is not None:
+        root.after_cancel(loop_after_id)
+        loop_after_id = None
 
     player_x = width / 2
     player_y = height / 2 + 100
     player_angle = 0.0
+
+    bot_x = width / 2
+    bot_y = height / 2 - 100
+    bot_angle = 180.0
+    bot_ball_attached = False
+    bot_kick_cooldown = 0
+    bot_delay = 45
+    bot_wander_timer = 0
+    bot_steal_delay = 0
+
+    bot_keeper_x = width / 2
+    bot_keeper_y = margin + 10
+    bot_keeper_direction = 1
+    bot_keeper_ball_attached = False
+    bot_keeper_kick_cooldown = 0
 
     ball_x = width / 2
     ball_y = height / 2
@@ -164,14 +445,26 @@ def reset_positions():
     ball_vy = 0
     ball_attached = False
     goal_checked = False
+    last_touch = None
     game_started = False
 
 
 def start():
     #Перезапуск игры#
-    global in_character_select, game_started
+    global in_character_select, game_started, showing_random_char, bot_char, bot_radius, bot_speed, bot_turn, bot_kick_power, bot_kick_accuracy
     in_character_select = False
+    showing_random_char = False
     game_started = False
+    
+    bot_char = select_random_bot()
+    bot_radius = bot_char["radius"]
+    bot_speed = bot_char["speed"] * 0.6
+    bot_turn = bot_char["turn"] * 0.6
+    bot_kick_power = bot_char["kick"] * 0.7
+    bot_kick_accuracy = bot_char["accuracy"] * 1.5
+    
+    generate_pillars()  # Генерируем столбы
+    generate_puddles()
     reset_positions()
     draw_field()
     create_game_objects()
@@ -191,6 +484,67 @@ def select_character(char):
     start()
 
 
+def show_random_character(char):
+    """Показывает экран с информацией о случайно выбранном персонаже"""
+    global showing_random_char, random_char
+    showing_random_char = True
+    random_char = char
+    
+    canvas.delete("all")
+    canvas.create_rectangle(0, 0, width, height, fill="darkgreen")
+    
+    canvas.create_text(
+        width // 2, height // 2 - 80,
+        text="СЛУЧАЙНЫЙ ВЫБОР",
+        font=("Arial", 28, "bold"),
+        fill="white"
+    )
+    
+    canvas.create_text(
+        width // 2, height // 2 - 30,
+        text=f"Вы играете за:",
+        font=("Arial", 18),
+        fill="white"
+    )
+    
+    canvas.create_text(
+        width // 2, height // 2 + 20,
+        text=char["name"],
+        font=("Arial", 36, "bold"),
+        fill=char["color"]
+    )
+    
+    stats_text = f"Скорость: {char['speed']} | Удар: {char['kick']} | Поворот: {char['turn']} | Точность: {char['accuracy']}°"
+    canvas.create_text(
+        width // 2, height // 2 + 60,
+        text=stats_text,
+        font=("Arial", 12),
+        fill="white"
+    )
+    
+    x1 = width // 2 - 80
+    y1 = height // 2 + 100
+    x2 = width // 2 + 80
+    y2 = height // 2 + 140
+    
+    canvas.create_rectangle(x1, y1, x2, y2, fill="gray30", outline="white", width=2)
+    canvas.create_text(
+        width // 2, height // 2 + 120,
+        text="ИГРАТЬ",
+        font=("Arial", 18, "bold"),
+        fill="white"
+    )
+    
+    global random_play_button_coords
+    random_play_button_coords = (x1, y1, x2, y2)
+
+
+def select_random_character():
+    """Выбирает случайного персонажа и показывает его"""
+    char = random.choice(characters)
+    show_random_character(char)
+
+
 def show_character_select():
     #Показать экран выбора персонажа#
     global in_character_select
@@ -199,13 +553,28 @@ def show_character_select():
     canvas.create_rectangle(0, 0, width, height, fill="darkgreen")
 
     canvas.create_text(
-        width // 2, 50,
+        width // 2, 40,
         text="ВЫБОР ПЕРСОНАЖА",
         font=("Arial", 24, "bold"),
         fill="white"
     )
 
-    # Рисуем кнопки для каждого персонажа
+    rand_x1 = width // 2 - 100
+    rand_y1 = 70
+    rand_x2 = width // 2 + 100
+    rand_y2 = 105
+    
+    canvas.create_rectangle(rand_x1, rand_y1, rand_x2, rand_y2, fill="darkorange", outline="white", width=2)
+    canvas.create_text(
+        width // 2, 87,
+        text="🎲 СЛУЧАЙНЫЙ ВЫБОР",
+        font=("Arial", 14, "bold"),
+        fill="white"
+    )
+    
+    global random_button_coords
+    random_button_coords = (rand_x1, rand_y1, rand_x2, rand_y2)
+
     button_width = 200
     button_height = 80
     start_y = 120
@@ -217,9 +586,7 @@ def show_character_select():
         x2 = width // 2 + button_width // 2
         y2 = y1 + button_height
 
-        # Кнопка
         canvas.create_rectangle(x1, y1, x2, y2, fill="gray30", outline="white", width=2)
-        # Имя персонажа
         canvas.create_text(
             width // 2, y1 + 20,
             text=char["name"],
@@ -227,7 +594,6 @@ def show_character_select():
             fill=char["color"]
         )
 
-        # Характеристики
         stats_text = f"Скорость: {char['speed']} | Удар: {char['kick']} | Поворот: {char['turn']} | Точность: {char['accuracy']}°"
         canvas.create_text(
             width // 2, y1 + 50,
@@ -236,15 +602,28 @@ def show_character_select():
             fill="white"
         )
 
-        # Сохраняем координаты кнопки в персонаже для обработки кликов
         char["button_coords"] = (x1, y1, x2, y2)
 
 
 def on_click(event):
     #Обработка кликов мыши#
+    global in_character_select, showing_random_char
+    
+    if showing_random_char:
+        x1, y1, x2, y2 = random_play_button_coords
+        if x1 <= event.x <= x2 and y1 <= event.y <= y2:
+            select_character(random_char)
+            return
+        return
+    
     if not in_character_select:
         return
-    # Проверяем клики по кнопкам выбора персонажа
+    
+    x1, y1, x2, y2 = random_button_coords
+    if x1 <= event.x <= x2 and y1 <= event.y <= y2:
+        select_random_character()
+        return
+    
     for char in characters:
         if "button_coords" in char:
             x1, y1, x2, y2 = char["button_coords"]
@@ -273,6 +652,40 @@ def update_visuals():
     )
 
     canvas.coords(
+        bot_circle,
+        bot_x - bot_radius,
+        bot_y - bot_radius,
+        bot_x + bot_radius,
+        bot_y + bot_radius
+    )
+
+    bot_rad = math.radians(bot_angle)
+
+    canvas.coords(
+        bot_line,
+        bot_x,
+        bot_y,
+        bot_x + math.sin(bot_rad) * bot_radius,
+        bot_y - math.cos(bot_rad) * bot_radius
+    )
+
+    canvas.coords(
+        bot_keeper_circle,
+        bot_keeper_x - bot_keeper_radius,
+        bot_keeper_y - bot_keeper_radius,
+        bot_keeper_x + bot_keeper_radius,
+        bot_keeper_y + bot_keeper_radius
+    )
+
+    canvas.coords(
+        bot_keeper_line,
+        bot_keeper_x,
+        bot_keeper_y,
+        bot_keeper_x,
+        bot_keeper_y - bot_keeper_radius
+    )
+
+    canvas.coords(
         ball,
         ball_x - ball_radius,
         ball_y - ball_radius,
@@ -281,34 +694,47 @@ def update_visuals():
     )
 
 
-def end_game():
-    canvas.create_text(width // 2, height // 2, text="ГОЛ!", font=("Arial", 48, "bold"), fill="gold")
-    root.after(3000, start)  # Перезапуск через 3 секунды
+def end_game(scorer):
+    """scorer: 'player' или 'bot'"""
+    if scorer == "player":
+        text = "ГОЛ!"
+        color = "gold"
+    else:
+        text = "ПРОПУЩЕН ГОЛ!"
+        color = "red"
+    canvas.create_text(width // 2, height // 2, text=text, font=("Arial", 48, "bold"), fill=color)
+    root.after(3000, start)
 
 
 def check_goal():
-    # Верхние ворота
+    # Верхние ворота (бота) - туда забивает игрок
     if (width // 2 - 30 < ball_x < width // 2 + 30 and
             margin - 15 < ball_y < margin):
-        return True
-
-    # Нижние ворота
+        return "player"
+    
+    # Нижние ворота (игрока) - туда забивает бот
     if (width // 2 - 30 < ball_x < width // 2 + 30 and
             height - margin < ball_y < height - margin + 15):
-        return True
-
-    return False
+        return "bot"
+    
+    return None
 
 
 def try_pick_ball():
-    global ball_attached
-
+    """Попытка подобрать мяч или отобрать у бота"""
+    global ball_attached, last_touch, bot_ball_attached, bot_keeper_ball_attached
+    
     dx = ball_x - player_x
     dy = ball_y - player_y
     distance = math.hypot(dx, dy)
-
+    
     if distance < 30:
+        if bot_ball_attached:
+            bot_ball_attached = False
+        if bot_keeper_ball_attached:
+            bot_keeper_ball_attached = False
         ball_attached = True
+        last_touch = "player"
 
 
 def kick_ball():
@@ -320,12 +746,169 @@ def kick_ball():
     ball_attached = False
     rad = math.radians(player_angle)
     
-    # Добавляем случайное отклонение в зависимости от точности
     deviation = random.uniform(-kick_accuracy, kick_accuracy)
     rad += math.radians(deviation)
     
     ball_vx = math.sin(rad) * kick_power
     ball_vy = -math.cos(rad) * kick_power
+
+
+def update_bot():
+    """Обновление поведения бота"""
+    global bot_x, bot_y, bot_angle, bot_ball_attached, bot_kick_cooldown, bot_delay, bot_wander_timer, bot_steal_delay
+    global ball_attached, ball_vx, ball_vy, last_touch, ball_x, ball_y
+    
+    if bot_delay > 0:
+        bot_delay -= 1
+        return
+    
+    if bot_kick_cooldown > 0:
+        bot_kick_cooldown -= 1
+    
+    if bot_steal_delay > 0:
+        bot_steal_delay -= 1
+    
+    bot_wander_timer -= 1
+    if bot_wander_timer <= 0:
+        bot_wander_timer = random.randint(20, 50)
+        if random.random() < 0.2:
+            bot_angle += random.uniform(-40, 40)
+    
+    target_x = ball_x
+    target_y = ball_y
+    
+    if bot_ball_attached:
+        target_x = width / 2 + random.uniform(-25, 25)
+        target_y = height - margin + 15
+    
+    dx = target_x - bot_x
+    dy = target_y - bot_y
+    target_angle = math.degrees(math.atan2(dx, -dy))
+    
+    angle_diff = target_angle - bot_angle
+    while angle_diff > 180:
+        angle_diff -= 360
+    while angle_diff < -180:
+        angle_diff += 360
+    
+    if abs(angle_diff) > bot_turn:
+        if angle_diff > 0:
+            bot_angle += bot_turn
+        else:
+            bot_angle -= bot_turn
+    else:
+        bot_angle = target_angle
+    
+    rad = math.radians(bot_angle)
+    distance_to_target = math.hypot(dx, dy)
+    
+    # Бот бьёт с разной дистанции
+    kick_distance = random.randint(60, 250)
+    if bot_ball_attached and distance_to_target < kick_distance and bot_kick_cooldown == 0:
+        target_goal_x = width // 2 + random.uniform(-25, 25)
+        target_goal_y = height - margin + random.uniform(-5, 10)
+        
+        goal_dx = target_goal_x - bot_x
+        goal_dy = target_goal_y - bot_y
+        goal_angle = math.atan2(goal_dx, -goal_dy)
+        
+        deviation = random.uniform(-bot_kick_accuracy, bot_kick_accuracy)
+        kick_rad = goal_angle + math.radians(deviation)
+        
+        ball_vx = math.sin(kick_rad) * bot_kick_power
+        ball_vy = -math.cos(kick_rad) * bot_kick_power
+        bot_ball_attached = False
+        ball_attached = False
+        last_touch = "bot"
+        bot_kick_cooldown = 60
+        return
+    
+    # Отбор мяча у игрока с задержкой
+    if not bot_ball_attached and ball_attached and last_touch == "player":
+        dist_to_player = math.hypot(player_x - bot_x, player_y - bot_y)
+        if dist_to_player < 35:
+            if bot_steal_delay == 0:
+                bot_steal_delay = 30  # Задержка 30 кадров (~0.5 сек)
+            elif bot_steal_delay == 1 and random.random() < 0.25:
+                # Отбираем мяч - мяч теперь сразу у бота
+                ball_attached = False
+                bot_ball_attached = True
+                last_touch = "bot"
+                bot_steal_delay = 0
+                # Мяч будет следовать за ботом через game_loop
+    
+    if not bot_ball_attached and not ball_attached:
+        dist_to_ball = math.hypot(ball_x - bot_x, ball_y - bot_y)
+        if dist_to_ball < 30:
+            if random.random() < 0.8:
+                bot_ball_attached = True
+                ball_attached = True
+                last_touch = "bot"
+    
+    should_move = False
+    if bot_ball_attached and distance_to_target > 10:
+        should_move = random.random() < 0.9
+    elif not bot_ball_attached and distance_to_target > 30:
+        should_move = random.random() < 0.75
+    
+    if should_move:
+        current_speed = bot_speed
+        if is_in_puddle(bot_x, bot_y, bot_radius):
+            current_speed *= 0.5
+        
+        new_x = max(margin + bot_radius,
+                    min(width - margin - bot_radius, bot_x + math.sin(rad) * current_speed))
+        new_y = max(margin + bot_radius,
+                    min(height - margin - bot_radius, bot_y - math.cos(rad) * current_speed))
+        bot_x, bot_y = new_x, new_y
+
+
+def update_bot_keeper():
+    """Обновление вратаря бота"""
+    global bot_keeper_x, bot_keeper_y, bot_keeper_direction, bot_keeper_ball_attached, bot_keeper_kick_cooldown
+    global ball_attached, ball_vx, ball_vy, last_touch, ball_x, ball_y
+    
+    if bot_keeper_kick_cooldown > 0:
+        bot_keeper_kick_cooldown -= 1
+    
+    # Медленное движение влево-вправо в штрафной площади
+    bot_keeper_x += bot_keeper_speed * bot_keeper_direction
+    
+    if bot_keeper_x > width // 2 + 45 - bot_keeper_radius:
+        bot_keeper_direction = -1
+    elif bot_keeper_x < width // 2 - 45 + bot_keeper_radius:
+        bot_keeper_direction = 1
+    
+    # Проверяем расстояние до мяча (всегда, не только когда мяч свободен)
+    dist = math.hypot(ball_x - bot_keeper_x, ball_y - bot_keeper_y)
+    
+    # Если мяч близко и вратарь в своей зоне - забирает мяч
+    if not bot_keeper_ball_attached and dist < 40 and ball_y < margin + 80:
+        # Отбираем мяч у кого угодно
+        if ball_attached:
+            # Отбираем у игрока или бота
+            ball_attached = False
+            # Сбрасываем владение у других
+            # (бот и игрок сами проверяют ball_attached)
+        bot_keeper_ball_attached = True
+        ball_attached = True
+        last_touch = "bot_keeper"
+    
+    # Если вратарь с мячом - пасует боту
+    if bot_keeper_ball_attached and bot_keeper_kick_cooldown == 0:
+        # Пас вперёд в сторону бота
+        dx = bot_x - bot_keeper_x + random.uniform(-80, 80)
+        dy = abs(bot_y - bot_keeper_y) + random.uniform(50, 150)
+        angle = math.atan2(dx, dy)
+        power = 8
+        
+        ball_vx = math.sin(angle) * power
+        ball_vy = math.cos(angle) * power  # Вперёд, вниз по полю
+        
+        bot_keeper_ball_attached = False
+        ball_attached = False
+        last_touch = "bot_keeper"
+        bot_keeper_kick_cooldown = 45
 
 
 def on_press(event):
@@ -336,46 +919,25 @@ def on_press(event):
     if key == "e":
         try_pick_ball()
     if key == "space":
-        if ball_attached:
+        if ball_attached and last_touch == "player":
             kick_ball()
         else:
             try_pick_ball()
     if key == "q":
         ball_attached = False
+        bot_ball_attached = False
+        bot_keeper_ball_attached = False
 
 
 def on_release(event):
     keys_pressed.discard(event.keysym.lower())
 
 
-# Добавь глобальную переменную для хранения ID after
-loop_after_id = None
-
-def reset_positions():
-    global player_x, player_y, player_angle
-    global ball_x, ball_y, ball_vx, ball_vy, ball_attached, goal_checked, game_started, loop_after_id
-
-    # Отменяем старый цикл
-    if loop_after_id is not None:
-        root.after_cancel(loop_after_id)
-        loop_after_id = None
-
-    player_x = width / 2
-    player_y = height / 2 + 100
-    player_angle = 0.0
-
-    ball_x = width / 2
-    ball_y = height / 2
-    ball_vx = 0
-    ball_vy = 0
-    ball_attached = False
-    goal_checked = False
-    game_started = False
-
-
 def game_loop():
     global player_x, player_y, player_angle
-    global ball_x, ball_y, ball_vx, ball_vy, ball_attached, goal_checked, game_started, loop_after_id
+    global bot_x, bot_y, bot_angle, bot_ball_attached, bot_kick_cooldown, bot_delay, bot_wander_timer, bot_steal_delay
+    global bot_keeper_x, bot_keeper_y, bot_keeper_direction, bot_keeper_ball_attached, bot_keeper_kick_cooldown
+    global ball_x, ball_y, ball_vx, ball_vy, ball_attached, goal_checked, game_started, loop_after_id, last_touch
 
     if game_started:
         return
@@ -383,51 +945,93 @@ def game_loop():
 
     def loop():
         global player_x, player_y, player_angle
-        global ball_x, ball_y, ball_vx, ball_vy, ball_attached, goal_checked, loop_after_id
+        global bot_x, bot_y, bot_angle, bot_ball_attached, bot_kick_cooldown, bot_delay, bot_wander_timer, bot_steal_delay
+        global bot_keeper_x, bot_keeper_y, bot_keeper_direction, bot_keeper_ball_attached, bot_keeper_kick_cooldown
+        global ball_x, ball_y, ball_vx, ball_vy, ball_attached, goal_checked, loop_after_id, last_touch
 
-        # поворот
+        # поворот игрока
         if "left" in keys_pressed or "a" in keys_pressed:
             player_angle -= turn_senor
         if "right" in keys_pressed or "d" in keys_pressed:
             player_angle += turn_senor
 
-        # движение ВПЕРЁД
+        # движение игрока ВПЕРЁД
         if "up" in keys_pressed or "w" in keys_pressed:
             rad = math.radians(player_angle)
+            current_speed = player_speed * 0.5 if is_in_puddle(player_x, player_y, player_radius) else player_speed
+            
             new_x = max(margin + player_radius,
-                        min(width - margin - player_radius, player_x + math.sin(rad) * player_speed))
+                        min(width - margin - player_radius, player_x + math.sin(rad) * current_speed))
             new_y = max(margin + player_radius,
-                        min(height - margin - player_radius, player_y - math.cos(rad) * player_speed))
-            player_x, player_y = new_x, new_y
+                        min(height - margin - player_radius, player_y - math.cos(rad) * current_speed))
+            
+            # Проверка столкновения со столбом
+            new_x, new_y, nx, ny, bounce = check_pillar_collision(new_x, new_y, player_radius)
+            if bounce > 0:
+                # Отскок игрока от столба
+                player_x, player_y = new_x, new_y
+            else:
+                player_x, player_y = new_x, new_y
 
-        # движение НАЗАД
+        # движение игрока НАЗАД
         if "down" in keys_pressed or "s" in keys_pressed:
             rad = math.radians(player_angle)
+            current_speed = player_speed * 0.5 if is_in_puddle(player_x, player_y, player_radius) else player_speed
+            
             new_x = max(margin + player_radius,
-                        min(width - margin - player_radius, player_x - math.sin(rad) * player_speed))
+                        min(width - margin - player_radius, player_x - math.sin(rad) * current_speed))
             new_y = max(margin + player_radius,
-                        min(height - margin - player_radius, player_y + math.cos(rad) * player_speed))
+                        min(height - margin - player_radius, player_y + math.cos(rad) * current_speed))
+            
+            new_x, new_y, nx, ny, bounce = check_pillar_collision(new_x, new_y, player_radius)
             player_x, player_y = new_x, new_y
+
+        # Обновление бота и вратаря
+        update_bot()
+        update_bot_keeper()
 
         rad = math.radians(player_angle)
 
         if ball_attached:
-            offset = player_radius + ball_radius + 4
-            ball_x = player_x + math.sin(rad) * offset
-            ball_y = player_y - math.cos(rad) * offset
+            if last_touch == "player":
+                offset = player_radius + ball_radius + 4
+                ball_x = player_x + math.sin(rad) * offset
+                ball_y = player_y - math.cos(rad) * offset
+            elif last_touch == "bot":
+                bot_rad = math.radians(bot_angle)
+                offset = bot_radius + ball_radius + 4
+                ball_x = bot_x + math.sin(bot_rad) * offset
+                ball_y = bot_y - math.cos(bot_rad) * offset
+            elif last_touch == "bot_keeper":
+                offset = bot_keeper_radius + ball_radius + 4
+                ball_x = bot_keeper_x
+                ball_y = bot_keeper_y - offset
         else:
             ball_x += ball_vx
             ball_y += ball_vy
 
-            # трение
-            ball_vx *= 0.99
-            ball_vy *= 0.99
+            # Проверка столкновения со столбами
+            new_ball_x, new_ball_y, nx, ny, bounce_power = check_pillar_collision(ball_x, ball_y, ball_radius)
+            if bounce_power > 0:
+                ball_x, ball_y = new_ball_x, new_ball_y
+                # Отскок мяча от столба с сильной физикой
+                # Скорость отскока = текущая скорость * bounce_power
+                speed = math.hypot(ball_vx, ball_vy)
+                # Направление отскока
+                dot_product = ball_vx * nx + ball_vy * ny
+                ball_vx = (ball_vx - 2 * dot_product * nx) * bounce_power
+                ball_vy = (ball_vy - 2 * dot_product * ny) * bounce_power
 
-            # столкновение со стенками поля
+            if is_in_puddle(ball_x, ball_y):
+                ball_vx *= 0.95
+                ball_vy *= 0.95
+            else:
+                ball_vx *= 0.99
+                ball_vy *= 0.99
+
             left = margin + ball_radius
             right = width - margin - ball_radius
 
-            # границы для ворот
             if width // 2 - 30 < ball_x < width // 2 + 30:
                 top = margin - 15 + ball_radius
             else:
@@ -454,10 +1058,11 @@ def game_loop():
                 ball_y = bottom
                 ball_vy *= -0.8
 
-        # гол ли
-        if not goal_checked and check_goal():
+        # Проверка гола
+        scorer = check_goal()
+        if not goal_checked and scorer:
             goal_checked = True
-            end_game()
+            end_game(scorer)
 
         update_visuals()
         loop_after_id = root.after(16, loop)
@@ -473,3 +1078,5 @@ root.bind("<Button-1>", on_click)
 # Показать экран выбора персонажа
 show_character_select()
 root.mainloop()
+проанализируй код футбола,
+сделай так, чтобы вратарь нормально отбивал мячи и когда игрок рядом с воротами, но не с вратарем у него не отбивался мяч. исправь анимацию отбора мяча бота, он просто оставляет мяч на поле, а потом мяч просто пинается

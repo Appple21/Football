@@ -94,7 +94,7 @@ score_text_bot    = None
 score_text_player = None
 
 characters = [
-    {"name": "Гаяр",     "color": "black",  "outline": "darkred",    "radius": 14, "speed": 4.25, "turn": 4.25, "kick": 7,  "accuracy": 10},
+    {"name": "Гаяр",     "color": "black",  "outline": "darkred",    "radius": 14, "speed": 4.25, "turn": 5, "kick": 7,  "accuracy": 10},
     {"name": "Лёша",     "color": "red",    "outline": "darkred",    "radius": 14, "speed": 3.75, "turn": 4,    "kick": 6,  "accuracy": 17.5},
     {"name": "Климентий","color": "blue",   "outline": "darkblue",   "radius": 14, "speed": 3,    "turn": 4,    "kick": 20, "accuracy": 25},
     {"name": "Петя",     "color": "orange", "outline": "darkorange", "radius": 12, "speed": 4,    "turn": 6,    "kick": 9,  "accuracy": 12.5},
@@ -138,7 +138,7 @@ def select_random_bot():
 
 # ─── СВЕТЛАЯ ТРАВА (с травинками) ──────────────────────────────────────────
 def draw_grass(cv):
-    """Рисует траву по краям поля с заметными травинками."""
+    """Трава вокруг поля из V-образных травинок."""
     grass_base = "#7bc96f"
     blade_colors = ["#2e7d32", "#388e3c", "#43a047", "#66bb6a"]
 
@@ -149,28 +149,16 @@ def draw_grass(cv):
 
     rng = random.Random(42)
 
-    def draw_blade(x, y, direction):
-        h = rng.randint(5, 10)
-        bend = rng.randint(-2, 2)
-        color = rng.choice(blade_colors)
+    for x in range(2, width, 4):
+        for y in range(2, height, 4):
+            if x < margin or x > width-margin or y < margin or y > height-margin:
+                h = rng.randint(4, 7)
+                spread = rng.randint(1, 3)
+                color = rng.choice(blade_colors)
 
-        if direction == "up":
-            cv.create_line(x, y, x + bend, y - h, fill=color, width=1)
-            cv.create_line(x, y, x - bend, y - h + 2, fill=color, width=1)
-        elif direction == "right":
-            cv.create_line(x, y, x + h, y + bend, fill=color, width=1)
-            cv.create_line(x, y, x + h - 2, y - bend, fill=color, width=1)
-        elif direction == "left":
-            cv.create_line(x, y, x - h, y + bend, fill=color, width=1)
-            cv.create_line(x, y, x - h + 2, y - bend, fill=color, width=1)
+                cv.create_line(x, y, x-spread, y-h, fill=color, width=1)
+                cv.create_line(x, y, x+spread, y-h, fill=color, width=1)
 
-    for x in range(0, width, 3):
-        draw_blade(x, margin - 1, "up")
-        draw_blade(x, height - margin, "up")
-
-    for y in range(0, height, 3):
-        draw_blade(margin - 1, y, "left")
-        draw_blade(width - margin, y, "right")
 
 
 # ─── ИГРОКИ ─────────────────────────────────────────────────────────────────

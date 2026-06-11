@@ -138,42 +138,39 @@ def select_random_bot():
 
 # ─── СВЕТЛАЯ ТРАВА (с травинками) ──────────────────────────────────────────
 def draw_grass(cv):
-    """Рисует светло-зелёный газон с травинками вокруг поля."""
-    grass_base = "#c8e6c9"      # очень светлый зелёный
-    blade_colors = ["#66bb6a", "#81c784", "#a5d6a7", "#c8e6c9"]
+    """Рисует траву по краям поля с заметными травинками."""
+    grass_base = "#7bc96f"
+    blade_colors = ["#2e7d32", "#388e3c", "#43a047", "#66bb6a"]
 
-    # Закрашиваем все четыре полосы
     cv.create_rectangle(0, 0, width, margin, fill=grass_base, outline="")
     cv.create_rectangle(0, height-margin, width, height, fill=grass_base, outline="")
     cv.create_rectangle(0, 0, margin, height, fill=grass_base, outline="")
     cv.create_rectangle(width-margin, 0, width, height, fill=grass_base, outline="")
 
-    rng = random.Random(42)   # фиксированный генератор для одинаковой травы
-    step = 4                  # расстояние между травинками
+    rng = random.Random(42)
 
-    # Верхняя трава (растёт вверх)
-    for x in range(0, width, step):
-        h = rng.randint(3, 7)
-        col = rng.choice(blade_colors)
-        cv.create_line(x, margin-1, x, margin-1 - h, fill=col, width=1)
+    def draw_blade(x, y, direction):
+        h = rng.randint(5, 10)
+        bend = rng.randint(-2, 2)
+        color = rng.choice(blade_colors)
 
-    # Нижняя трава (растёт вверх)
-    for x in range(0, width, step):
-        h = rng.randint(3, 7)
-        col = rng.choice(blade_colors)
-        cv.create_line(x, height-margin, x, height-margin - h, fill=col, width=1)
+        if direction == "up":
+            cv.create_line(x, y, x + bend, y - h, fill=color, width=1)
+            cv.create_line(x, y, x - bend, y - h + 2, fill=color, width=1)
+        elif direction == "right":
+            cv.create_line(x, y, x + h, y + bend, fill=color, width=1)
+            cv.create_line(x, y, x + h - 2, y - bend, fill=color, width=1)
+        elif direction == "left":
+            cv.create_line(x, y, x - h, y + bend, fill=color, width=1)
+            cv.create_line(x, y, x - h + 2, y - bend, fill=color, width=1)
 
-    # Левая трава (растёт вверх)
-    for y in range(0, height, step):
-        h = rng.randint(3, 7)
-        col = rng.choice(blade_colors)
-        cv.create_line(margin-1, y, margin-1, y - h, fill=col, width=1)
+    for x in range(0, width, 3):
+        draw_blade(x, margin - 1, "up")
+        draw_blade(x, height - margin, "up")
 
-    # Правая трава (растёт вверх)
-    for y in range(0, height, step):
-        h = rng.randint(3, 7)
-        col = rng.choice(blade_colors)
-        cv.create_line(width-margin, y, width-margin, y - h, fill=col, width=1)
+    for y in range(0, height, 3):
+        draw_blade(margin - 1, y, "left")
+        draw_blade(width - margin, y, "right")
 
 
 # ─── ИГРОКИ ─────────────────────────────────────────────────────────────────
@@ -342,21 +339,42 @@ def check_pillar_collision(x, y, radius):
 def generate_puddles():
     global puddles
     puddles = []
+
     for _ in range(random.randint(3, 6)):
-        while True:
-            x = random.randint(margin+30, width-margin-30)
-            y = random.randint(margin+30, height-margin-30)
-            if not any(math.hypot(x-p["x"],y-p["y"]) < p["radius"]+40 for p in pillars):
+        attempts = 0
+
+        while attempts < 100:
+            mr = random.randint(20, 50)
+
+            x = random.randint(margin + mr + 20, width - margin - mr - 20)
+            y = random.randint(margin + mr + 20, height - margin - mr - 20)
+
+            if not any(math.hypot(x - p["x"], y - p["y"]) < p["radius"] + mr + 20 for p in pillars):
                 break
-        mr = random.randint(20, 50)
-        puddles.append({"x":x,"y":y,"radius":mr,"ovals":[]})
-        for _ in range(random.randint(2,4)):
-            puddles[-1]["ovals"].append({
-                "x": x+random.randint(-15,15), "y": y+random.randint(-15,15),
-                "radius_x": mr+random.randint(-10,20),
-                "radius_y": mr*(0.5+random.random()*0.5),
-                "alpha": random.randint(20,40),
+
+            attempts += 1
+
+        puddle = {"x": x, "y": y, "radius": mr, "ovals": []}
+
+        for _ in range(random.randint(2, 4)):
+            rx = mr + random.randint(-10, 20)
+            ry = int(mr * (0.5 + random.random() * 0.5))
+
+            ox = x + random.randint(-10, 10)
+            oy = y + random.randint(-10, 10)
+
+            ox = max(margin + rx, min(width - margin - rx, ox))
+            oy = max(margin + ry, min(height - margin - ry, oy))
+
+            puddle["ovals"].append({
+                "x": ox,
+                "y": oy,
+                "radius_x": rx,
+                "radius_y": ry,
+                "alpha": random.randint(20, 40),
             })
+
+        puddles.append(puddle)
 
 
 def draw_puddles():

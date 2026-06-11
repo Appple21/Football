@@ -13,7 +13,7 @@ SMALL_BOX_HALF_WIDTH = 90
 
 root = tk.Tk()
 root.title("Вертикальное футбольное поле")
-canvas = tk.Canvas(root, width=width, height=height, bg="green")
+canvas = tk.Canvas(root, width=width, height=height, bg="#1a1a1a")
 canvas.pack()
 
 player_radius = 14
@@ -26,11 +26,10 @@ player_y = height / 2 + 100
 player_angle = 0.0
 keys_pressed = set()
 
-# --- ВРАТАРЬ ИГРОКА ---
 my_keeper_x = width / 2
 my_keeper_y = height - margin - 10
 my_keeper_radius = 10
-my_keeper_speed = 2.5          # уменьшено с 4.0 до 2.5
+my_keeper_speed = 2.5
 my_keeper_ball_attached = False
 my_keeper_kick_cooldown = 0
 MY_KEEPER_ANGLE = 0.0
@@ -50,7 +49,6 @@ bot_delay = 45
 bot_wander_timer = 0
 bot_steal_delay = 0
 
-# --- ВРАТАРЬ БОТА ---
 bot_keeper_x = width / 2
 bot_keeper_y = margin + 10
 bot_keeper_radius = 10
@@ -69,18 +67,16 @@ ball_attached = False
 goal_checked = False
 last_touch = None
 
-# --- СЧЁТ ---
 score_player = 0
 score_bot = 0
 
 pillars = []
 
-# Объекты игроков — теперь каждый состоит из нескольких слоёв
-player_objs  = {}   # shadow, body, shirt, head, direction_dot
+player_objs  = {}
 my_keeper_objs = {}
 bot_objs     = {}
 bot_keeper_objs = {}
-ball_objs    = {}   # shadow, base, patch1..6, shine
+ball_objs    = {}
 
 pillar_objects = []
 
@@ -110,8 +106,6 @@ selected_char = characters[0]
 random_button_coords = (0, 0, 0, 0)
 random_play_button_coords = (0, 0, 0, 0)
 
-
-# ─── ЦВЕТА ПЕРЕЛИВАНИЯ ──────────────────────────────────────────────────────
 SHIMMER_RANDOM  = ("#7a3a00", "#ffaa33")
 SHIMMER_CHAR    = ("#1a2a3a", "#2e6090")
 SHIMMER_PLAY    = ("#006622", "#00dd55")
@@ -142,128 +136,47 @@ def select_random_bot():
     return random.choice(available)
 
 
-# ─── ТРИБУНЫ ────────────────────────────────────────────────────────────────
+# ─── СВЕТЛАЯ ТРАВА (с травинками) ──────────────────────────────────────────
+def draw_grass(cv):
+    """Рисует светло-зелёный газон с травинками вокруг поля."""
+    grass_base = "#c8e6c9"      # очень светлый зелёный
+    blade_colors = ["#66bb6a", "#81c784", "#a5d6a7", "#c8e6c9"]
 
-CROWD_COLORS = [
-    "#e74c3c","#3498db","#2ecc71","#f39c12","#9b59b6",
-    "#1abc9c","#e67e22","#e91e63","#00bcd4","#ffeb3b",
-    "#ff5722","#607d8b","#795548","#ff9800","#8bc34a",
-    "#f06292","#4fc3f7","#aed581","#ffb74d","#ba68c8",
-]
-SKIN_TONES = ["#f5cba7","#f0b27a","#d4a76a","#c68642","#8d5524","#fdbcb4"]
+    # Закрашиваем все четыре полосы
+    cv.create_rectangle(0, 0, width, margin, fill=grass_base, outline="")
+    cv.create_rectangle(0, height-margin, width, height, fill=grass_base, outline="")
+    cv.create_rectangle(0, 0, margin, height, fill=grass_base, outline="")
+    cv.create_rectangle(width-margin, 0, width, height, fill=grass_base, outline="")
 
-_crowd_top = []
-_crowd_bot_stands = []
+    rng = random.Random(42)   # фиксированный генератор для одинаковой травы
+    step = 4                  # расстояние между травинками
 
+    # Верхняя трава (растёт вверх)
+    for x in range(0, width, step):
+        h = rng.randint(3, 7)
+        col = rng.choice(blade_colors)
+        cv.create_line(x, margin-1, x, margin-1 - h, fill=col, width=1)
 
-def generate_crowd():
-    """Генерирует случайные данные болельщиков (цвет, кожа, руки вверх)."""
-    global _crowd_top, _crowd_bot_stands
-    person_r = 5
-    cols = int(width / (person_r * 3))
+    # Нижняя трава (растёт вверх)
+    for x in range(0, width, step):
+        h = rng.randint(3, 7)
+        col = rng.choice(blade_colors)
+        cv.create_line(x, height-margin, x, height-margin - h, fill=col, width=1)
 
-    stand_bottom = margin - 15
-    rows_top = 3
-    row_h = max(1, stand_bottom // rows_top)
-    _crowd_top = []
-    for row in range(rows_top):
-        cy = row * row_h + row_h // 2
-        for col in range(cols):
-            cx = int(person_r * 1.5 + col * person_r * 3)
-            _crowd_top.append({
-                "cx": cx, "cy": cy,
-                "color": random.choice(CROWD_COLORS),
-                "skin":  random.choice(SKIN_TONES),
-                "arms":  random.random() < 0.25,
-            })
+    # Левая трава (растёт вверх)
+    for y in range(0, height, step):
+        h = rng.randint(3, 7)
+        col = rng.choice(blade_colors)
+        cv.create_line(margin-1, y, margin-1, y - h, fill=col, width=1)
 
-    stand_top2 = height - margin + 15
-    rows_bot = 3
-    row_h2 = max(1, (height - stand_top2) // rows_bot)
-    _crowd_bot_stands = []
-    for row in range(rows_bot):
-        cy = stand_top2 + row * row_h2 + row_h2 // 2
-        for col in range(cols):
-            cx = int(person_r * 1.5 + col * person_r * 3)
-            _crowd_bot_stands.append({
-                "cx": cx, "cy": cy,
-                "color": random.choice(CROWD_COLORS),
-                "skin":  random.choice(SKIN_TONES),
-                "arms":  random.random() < 0.25,
-            })
+    # Правая трава (растёт вверх)
+    for y in range(0, height, step):
+        h = rng.randint(3, 7)
+        col = rng.choice(blade_colors)
+        cv.create_line(width-margin, y, width-margin, y - h, fill=col, width=1)
 
 
-def draw_stands(cv):
-    """Рисует трибуны с болельщиками за обоими воротами."""
-    person_r = 5
-    stand_bottom = margin - 15
-    rows_top = 3
-    row_h = max(1, stand_bottom // rows_top)
-
-    tier_colors_top = ["#1e1e1e", "#252525", "#2c2c2c"]
-    seat_colors_top = ["#1a3a6a", "#163060", "#122855"]
-    for i in range(rows_top):
-        y0 = i * row_h
-        y1 = y0 + row_h
-        cv.create_rectangle(0, y0, width, y1, fill=tier_colors_top[i], outline="")
-        cv.create_rectangle(0, y1 - 3, width, y1, fill=seat_colors_top[i], outline="")
-
-    for p in _crowd_top:
-        cx, cy = p["cx"], p["cy"]
-        cv.create_oval(cx - person_r, cy - person_r + 2,
-                       cx + person_r, cy + person_r,
-                       fill=p["color"], outline="", tags="crowd")
-        hr = person_r * 0.6
-        cv.create_oval(cx - hr, cy - person_r - hr * 1.5,
-                       cx + hr, cy - person_r + hr * 0.4,
-                       fill=p["skin"], outline="", tags="crowd")
-        if p["arms"]:
-            arm_len = person_r * 1.3
-            cv.create_line(cx - person_r * 0.7, cy - person_r * 0.3,
-                           cx - person_r * 1.4, cy - person_r - arm_len * 0.8,
-                           fill=p["skin"], width=2, tags="crowd")
-            cv.create_line(cx + person_r * 0.7, cy - person_r * 0.3,
-                           cx + person_r * 1.4, cy - person_r - arm_len * 0.8,
-                           fill=p["skin"], width=2, tags="crowd")
-
-    cv.create_rectangle(0, stand_bottom - 4, width, stand_bottom,
-                        fill="#555555", outline="")
-
-    stand_top2 = height - margin + 15
-    rows_bot = 3
-    row_h2 = max(1, (height - stand_top2) // rows_bot)
-
-    tier_colors_bot = ["#1e1e1e", "#252525", "#2c2c2c"]
-    seat_colors_bot = ["#6a1a1a", "#601616", "#551212"]
-    for i in range(rows_bot):
-        y0 = stand_top2 + i * row_h2
-        y1 = y0 + row_h2
-        cv.create_rectangle(0, y0, width, y1, fill=tier_colors_bot[i], outline="")
-        cv.create_rectangle(0, y1 - 3, width, y1, fill=seat_colors_bot[i], outline="")
-
-    for p in _crowd_bot_stands:
-        cx, cy = p["cx"], p["cy"]
-        cv.create_oval(cx - person_r, cy - person_r + 2,
-                       cx + person_r, cy + person_r,
-                       fill=p["color"], outline="", tags="crowd")
-        hr = person_r * 0.6
-        cv.create_oval(cx - hr, cy - person_r - hr * 1.5,
-                       cx + hr, cy - person_r + hr * 0.4,
-                       fill=p["skin"], outline="", tags="crowd")
-        if p["arms"]:
-            arm_len = person_r * 1.3
-            cv.create_line(cx - person_r * 0.7, cy - person_r * 0.3,
-                           cx - person_r * 1.4, cy - person_r - arm_len * 0.8,
-                           fill=p["skin"], width=2, tags="crowd")
-            cv.create_line(cx + person_r * 0.7, cy - person_r * 0.3,
-                           cx + person_r * 1.4, cy - person_r - arm_len * 0.8,
-                           fill=p["skin"], width=2, tags="crowd")
-
-    cv.create_rectangle(0, stand_top2, width, stand_top2 + 4,
-                        fill="#555555", outline="")
-
-
-# ─── ИГРОКИ (детальные) ─────────────────────────────────────────────────────
+# ─── ИГРОКИ ─────────────────────────────────────────────────────────────────
 
 def _player_color_light(color):
     m = {
@@ -284,7 +197,7 @@ def create_player_objs(cv, x, y, r, body_color, outline_color, shirt_color=None,
     objs = {}
     objs["shadow"] = cv.create_oval(
         x-r+2, y-r//2+r, x+r+2, y+r//2+r,
-        fill="#003300", outline="", stipple="gray50")
+        fill="#1a0a00", outline="", stipple="gray50")
     objs["body"] = cv.create_oval(
         x-r, y-r, x+r, y+r,
         fill=body_color, outline=outline_color, width=2)
@@ -318,13 +231,13 @@ def move_player_objs(cv, objs, x, y, r, angle_deg):
     cv.coords(objs["dot"], tip_x-3, tip_y-3, tip_x+3, tip_y+3)
 
 
-# ─── МЯЧ (детальный) ────────────────────────────────────────────────────────
+# ─── МЯЧ ────────────────────────────────────────────────────────────────────
 
 def create_ball_objs(cv, x, y, r):
     objs = {}
     objs["shadow"] = cv.create_oval(
         x - r + 4, y + r - 3, x + r + 4, y + r + 5,
-        fill="#002200", outline="", stipple="gray50")
+        fill="#0a0a0a", outline="", stipple="gray50")
     objs["base"] = cv.create_oval(
         x - r, y - r, x + r, y + r,
         fill="white", outline="#111111", width=2)
@@ -451,8 +364,8 @@ def draw_puddles():
         for oval in puddle["ovals"]:
             x1,y1 = oval["x"]-oval["radius_x"], oval["y"]-oval["radius_y"]
             x2,y2 = oval["x"]+oval["radius_x"], oval["y"]+oval["radius_y"]
-            stipple = "gray75" if oval["alpha"]<25 else ("gray50" if oval["alpha"]<35 else "gray25")
-            canvas.create_oval(x1,y1,x2,y2, fill="navy", stipple=stipple, outline="")
+            # Насыщенные светло-синие лужи
+            canvas.create_oval(x1, y1, x2, y2, fill="#3eb8f0", outline="")
 
 
 def is_in_puddle(x, y, radius_check=ball_radius):
@@ -464,37 +377,81 @@ def is_in_puddle(x, y, radius_check=ball_radius):
     return False
 
 
+def draw_rubber_field(cv):
+    """Рисует тёмное резиновое покрытие как в футбольной коробке."""
+    base_color = "#2a1a14"
+    cv.create_rectangle(margin, margin, width-margin, height-margin,
+                        fill=base_color, outline="")
+    stripe_colors = ["#2e1d16", "#261610", "#2a1a14"]
+    stripe_h = 6
+    y = margin
+    i = 0
+    while y < height - margin:
+        cv.create_rectangle(margin, y, width-margin, min(y+stripe_h, height-margin),
+                            fill=stripe_colors[i % len(stripe_colors)], outline="")
+        y += stripe_h
+        i += 1
+    rng = random.Random(42)
+    for _ in range(400):
+        rx = rng.randint(margin+2, width-margin-2)
+        ry = rng.randint(margin+2, height-margin-2)
+        shade = rng.choice(["#3a2218", "#1e1008", "#2f1a12", "#362010"])
+        cv.create_oval(rx, ry, rx+2, ry+2, fill=shade, outline="")
+
+
 def draw_field():
     canvas.delete("all")
-    # Трибуны (под полем)
-    draw_stands(canvas)
-    # Зелёное поле
-    canvas.create_rectangle(margin, margin, width-margin, height-margin, fill="green", outline="")
-    # Разметка
-    canvas.create_rectangle(margin, margin, width-margin, height-margin, outline="white", width=3)
-    canvas.create_line(margin, height//2, width-margin, height//2, fill="white", width=3)
-    canvas.create_oval(width//2-60,height//2-60,width//2+60,height//2+60, outline="white", width=3)
-    canvas.create_oval(width//2-4,height//2-4,width//2+4,height//2+4, fill="white", outline="white")
-    canvas.create_rectangle(width//2-PENALTY_HALF_WIDTH,margin,width//2+PENALTY_HALF_WIDTH,margin+120, outline="white", width=3)
-    canvas.create_rectangle(width//2-PENALTY_HALF_WIDTH,height-margin-120,width//2+PENALTY_HALF_WIDTH,height-margin, outline="white", width=3)
-    canvas.create_rectangle(width//2-SMALL_BOX_HALF_WIDTH,margin,width//2+SMALL_BOX_HALF_WIDTH,margin+50, outline="white", width=3)
-    canvas.create_rectangle(width//2-SMALL_BOX_HALF_WIDTH,height-margin-50,width//2+SMALL_BOX_HALF_WIDTH,height-margin, outline="white", width=3)
+
+    # Трава по периметру (с травинками)
+    draw_grass(canvas)
+
+    # Резиновое покрытие поля
+    draw_rubber_field(canvas)
+
+    # Разметка белыми линиями
+    canvas.create_rectangle(margin, margin, width-margin, height-margin,
+                            outline="white", width=3)
+    canvas.create_line(margin, height//2, width-margin, height//2,
+                       fill="white", width=3)
+    canvas.create_oval(width//2-60, height//2-60, width//2+60, height//2+60,
+                       outline="white", width=3)
+    canvas.create_oval(width//2-4, height//2-4, width//2+4, height//2+4,
+                       fill="white", outline="white")
+    canvas.create_rectangle(width//2-PENALTY_HALF_WIDTH, margin,
+                            width//2+PENALTY_HALF_WIDTH, margin+120,
+                            outline="white", width=3)
+    canvas.create_rectangle(width//2-PENALTY_HALF_WIDTH, height-margin-120,
+                            width//2+PENALTY_HALF_WIDTH, height-margin,
+                            outline="white", width=3)
+    canvas.create_rectangle(width//2-SMALL_BOX_HALF_WIDTH, margin,
+                            width//2+SMALL_BOX_HALF_WIDTH, margin+50,
+                            outline="white", width=3)
+    canvas.create_rectangle(width//2-SMALL_BOX_HALF_WIDTH, height-margin-50,
+                            width//2+SMALL_BOX_HALF_WIDTH, height-margin,
+                            outline="white", width=3)
+
     # Ворота
-    canvas.create_rectangle(width//2-GOAL_HALF_WIDTH,margin-15,width//2+GOAL_HALF_WIDTH,margin, outline="blue", width=3, fill="darkblue")
-    canvas.create_rectangle(width//2-GOAL_HALF_WIDTH,height-margin,width//2+GOAL_HALF_WIDTH,height-margin+15, outline="red", width=3, fill="darkred")
-    # Имя бота сверху оставлено, имя игрока снизу убрано
-    canvas.create_text(width//2, margin-38, text=f"{bot_char['name']} (БОТ)", font=("Arial", 12, "bold"), fill="lightblue")
-    # canvas.create_text(width//2, height-margin+38, text=f"{selected_char['name']} (ИГРОК)", font=("Arial", 12, "bold"), fill="pink")
+    canvas.create_rectangle(width//2-GOAL_HALF_WIDTH, margin-15,
+                            width//2+GOAL_HALF_WIDTH, margin,
+                            outline="blue", width=3, fill="darkblue")
+    canvas.create_rectangle(width//2-GOAL_HALF_WIDTH, height-margin,
+                            width//2+GOAL_HALF_WIDTH, height-margin+15,
+                            outline="red", width=3, fill="darkred")
+
+    # Имя бота
+    canvas.create_text(width//2, margin-30,
+                       text=f"{bot_char['name']} (БОТ)",
+                       font=("Arial", 12, "bold"), fill="lightblue")
+
     draw_puddles()
     draw_pillars()
     draw_score()
 
 
 def draw_score():
-    """Рисует табло счёта сверху окна, над полем."""
     global score_text_bot, score_text_player
     bx = width // 2
-    by = (margin - 15) // 2
+    by = margin // 2
 
     pw, ph = 130, 30
     canvas.create_rectangle(bx - pw//2 - 2, by - ph//2 - 2,
@@ -507,12 +464,12 @@ def draw_score():
                              bx + pw//2 - 2, by - ph//2 + 5,
                              fill="#3333bb", outline="")
 
-    canvas.create_text(bx - 38, by - 7,
-        text="БОТ", font=("Arial", 6, "bold"), fill="#7799ff")
-    canvas.create_text(bx + 38, by - 7,
-        text="ВЫ", font=("Arial", 6, "bold"), fill="#ff8899")
-
-    canvas.create_text(bx, by + 4, text=":", font=("Arial", 18, "bold"), fill="#ffffff")
+    canvas.create_text(bx - 38, by - 7, text="БОТ",
+                       font=("Arial", 6, "bold"), fill="#7799ff")
+    canvas.create_text(bx + 38, by - 7, text="ВЫ",
+                       font=("Arial", 6, "bold"), fill="#ff8899")
+    canvas.create_text(bx, by + 4, text=":",
+                       font=("Arial", 18, "bold"), fill="#ffffff")
 
     score_text_bot = canvas.create_text(bx - 22, by + 4,
         text=str(score_bot), font=("Arial", 18, "bold"), fill="#88aaff")
@@ -521,7 +478,6 @@ def draw_score():
 
 
 def update_score_display():
-    """Обновляет цифры счёта без перерисовки поля."""
     if score_text_bot and score_text_player:
         canvas.itemconfig(score_text_bot,    text=str(score_bot))
         canvas.itemconfig(score_text_player, text=str(score_player))
@@ -597,12 +553,11 @@ def start():
     in_character_select = False; showing_random_char = False; game_started = False
     bot_char = select_random_bot()
     bot_radius = bot_char["radius"]
-    # Усиленный бот – теперь удар ещё сильнее (1.2 вместо 1.0)
     bot_speed  = bot_char["speed"] * 0.75
     bot_turn   = bot_char["turn"]  * 0.75
-    bot_kick_power    = bot_char["kick"]     * 1.2   # сильнее бьёт (было 1.0)
+    bot_kick_power    = bot_char["kick"]     * 1.2
     bot_kick_accuracy = bot_char["accuracy"] * 1.2
-    generate_pillars(); generate_puddles(); generate_crowd()
+    generate_pillars(); generate_puddles()
     reset_positions()
     draw_field()
     create_game_objects()
@@ -802,7 +757,6 @@ def update_my_keeper():
 
 
 def update_bot():
-    """Сильный бот с усиленным ударом (1.2x), обходит столбы через check_pillar_collision."""
     global bot_x,bot_y,bot_angle,bot_ball_attached,bot_kick_cooldown,bot_delay,bot_wander_timer,bot_steal_delay
     global ball_attached,ball_vx,ball_vy,last_touch,ball_x,ball_y
 
@@ -881,7 +835,6 @@ def update_bot():
         current_speed = bot_speed * (0.5 if is_in_puddle(bot_x, bot_y, bot_radius) else 1.0)
         new_x = max(margin+bot_radius, min(width-margin-bot_radius, bot_x + math.sin(rad)*current_speed))
         new_y = max(margin+bot_radius, min(height-margin-bot_radius, bot_y - math.cos(rad)*current_speed))
-        # коллизия со столбами (только выталкивание)
         new_x, new_y, _, _, _ = check_pillar_collision(new_x, new_y, bot_radius)
         bot_x, bot_y = new_x, new_y
 
@@ -901,7 +854,6 @@ def update_bot_keeper():
     if bot_keeper_x>=kr: bot_keeper_x=kr; bot_keeper_direction=-1
     elif bot_keeper_x<=kl: bot_keeper_x=kl; bot_keeper_direction=1
 
-    # Прыгает чаще: интервал 30-50
     if bot_keeper_jump_cooldown==0:
         jmp=18
         bot_keeper_x = max(kl, bot_keeper_x-jmp) if ball_x < bot_keeper_x else min(kr, bot_keeper_x+jmp)
